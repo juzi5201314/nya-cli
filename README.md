@@ -106,6 +106,18 @@ CLOUDFLARE_API_TOKEN=...
 - `web.ingest.provider` 支持 `scrapling`（本机抓取）与 `cloudflare`（Cloudflare Browser Rendering `/crawl`）。
 - 使用 `cloudflare` 时，需要在 `nya.toml` 中配置 `[web.ingest.providers.cloudflare].account_id`，并在环境变量中提供 `CLOUDFLARE_API_TOKEN`。
 
+### Provider 速率限制与重试
+
+所有外部 provider 的配置段都支持：
+
+- `rpm` / `tpm`：每分钟请求数 / token 数限制；`0` 表示不限制
+- `retry_max_retries`：额外重试次数（不含首次请求），默认 `3`
+- `retry_delay_seconds`：每次重试的基础等待时间（秒），默认 `10`
+
+说明：
+
+- 遇到 `429`（速率限制）时，会自动增加等待时间，并在启用重试时额外增加重试次数（默认 +2）。
+
 ### 6. 先试一条最短链路
 
 ```bash
@@ -140,6 +152,12 @@ nya learn git /path/to/repo --project
 - 远程 Git 缓存始终是**全局缓存**，不跟随 `--project`
 
 ## CLI 用法
+
+说明：
+
+- 默认在交互式终端下会启用 TUI（用于进度条等交互输出）。
+- 传入 `--no-tui` 可强制禁用 TUI。
+- 传入 `--json` 时会自动禁用 TUI，保证输出简洁、稳定，适合 agent 消费。
 
 ### 学习 Git 仓库
 

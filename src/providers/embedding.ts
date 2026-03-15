@@ -4,8 +4,10 @@ import {
 } from '@ai-sdk/google';
 import { createOpenAI, type OpenAIEmbeddingModelOptions } from '@ai-sdk/openai';
 import { embed, embedMany } from 'ai';
-
+import type { ProgressReporter } from '../tui/types';
 import type { AppConfig } from '../types/config';
+import { createFetchWithPolicies } from '../utils/fetch';
+import { estimateTokens } from '../utils/text';
 import type { EmbeddingFingerprint, EmbeddingProvider } from './types';
 
 function readRequiredEnv(name: string): string {
@@ -39,14 +41,27 @@ class GoogleEmbeddingProvider implements EmbeddingProvider {
   private readonly provider;
   private readonly documentTaskType: string;
   private readonly queryTaskType: string;
+  private readonly progress: ProgressReporter | undefined;
 
-  constructor(config: AppConfig) {
+  constructor(config: AppConfig, progress?: ProgressReporter) {
+    const providerConfig = config.embedding.providers.google;
     this.model = config.embedding.model;
-    this.dimensions = config.embedding.providers.google.output_dimensionality;
+    this.dimensions = providerConfig.output_dimensionality;
     this.documentTaskType = resolveDocumentTask(config.embedding.task_type);
     this.queryTaskType = resolveQueryTask(config.embedding.task_type);
+    this.progress = progress;
     this.provider = createGoogleGenerativeAI({
-      apiKey: readRequiredEnv(config.embedding.providers.google.api_key_env),
+      apiKey: readRequiredEnv(providerConfig.api_key_env),
+      fetch: createFetchWithPolicies({
+        rateLimit: {
+          rpm: providerConfig.rpm,
+          tpm: providerConfig.tpm,
+        },
+        retry: {
+          maxRetries: providerConfig.retry_max_retries,
+          delayMs: providerConfig.retry_delay_seconds * 1000,
+        },
+      }),
     });
   }
 
@@ -59,6 +74,7 @@ class GoogleEmbeddingProvider implements EmbeddingProvider {
       model: this.provider.embedding(this.model),
       values,
       maxParallelCalls: 4,
+      maxRetries: 0,
       providerOptions: {
         google: {
           outputDimensionality: this.dimensions,
@@ -67,6 +83,17 @@ class GoogleEmbeddingProvider implements EmbeddingProvider {
         } satisfies GoogleEmbeddingModelOptions,
       },
     });
+
+    const usageTokens = result.usage.tokens;
+    if (Number.isFinite(usageTokens) && usageTokens > 0) {
+      this.progress?.addEmbeddingTokens(usageTokens, false);
+    } else {
+      const estimated = values.reduce(
+        (sum, value) => sum + estimateTokens(value),
+        0
+      );
+      this.progress?.addEmbeddingTokens(estimated, true);
+    }
     return result.embeddings;
   }
 
@@ -74,6 +101,7 @@ class GoogleEmbeddingProvider implements EmbeddingProvider {
     const result = await embed({
       model: this.provider.embedding(this.model),
       value,
+      maxRetries: 0,
       providerOptions: {
         google: {
           outputDimensionality: this.dimensions,
@@ -82,6 +110,12 @@ class GoogleEmbeddingProvider implements EmbeddingProvider {
         } satisfies GoogleEmbeddingModelOptions,
       },
     });
+    const usageTokens = result.usage.tokens;
+    if (Number.isFinite(usageTokens) && usageTokens > 0) {
+      this.progress?.addEmbeddingTokens(usageTokens, false);
+    } else {
+      this.progress?.addEmbeddingTokens(estimateTokens(value), true);
+    }
     return result.embedding;
   }
 
@@ -102,13 +136,29 @@ class OpenAiEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions: number;
 
   private readonly provider;
+  private readonly progress: ProgressReporter | undefined;
 
-  constructor(private readonly config: AppConfig) {
+  constructor(
+    private readonly config: AppConfig,
+    progress?: ProgressReporter
+  ) {
+    const providerConfig = config.embedding.providers.openai;
     this.model = config.embedding.model;
-    this.dimensions = config.embedding.providers.openai.dimensions;
+    this.dimensions = providerConfig.dimensions;
+    this.progress = progress;
     this.provider = createOpenAI({
-      apiKey: readRequiredEnv(config.embedding.providers.openai.api_key_env),
-      baseURL: config.embedding.providers.openai.base_url,
+      apiKey: readRequiredEnv(providerConfig.api_key_env),
+      baseURL: providerConfig.base_url,
+      fetch: createFetchWithPolicies({
+        rateLimit: {
+          rpm: providerConfig.rpm,
+          tpm: providerConfig.tpm,
+        },
+        retry: {
+          maxRetries: providerConfig.retry_max_retries,
+          delayMs: providerConfig.retry_delay_seconds * 1000,
+        },
+      }),
     });
   }
 
@@ -121,12 +171,23 @@ class OpenAiEmbeddingProvider implements EmbeddingProvider {
       model: this.provider.embedding(this.model),
       values,
       maxParallelCalls: 4,
+      maxRetries: 0,
       providerOptions: {
         openai: {
           dimensions: this.dimensions,
         } satisfies OpenAIEmbeddingModelOptions,
       },
     });
+    const usageTokens = result.usage.tokens;
+    if (Number.isFinite(usageTokens) && usageTokens > 0) {
+      this.progress?.addEmbeddingTokens(usageTokens, false);
+    } else {
+      const estimated = values.reduce(
+        (sum, value) => sum + estimateTokens(value),
+        0
+      );
+      this.progress?.addEmbeddingTokens(estimated, true);
+    }
     return result.embeddings;
   }
 
@@ -134,12 +195,19 @@ class OpenAiEmbeddingProvider implements EmbeddingProvider {
     const result = await embed({
       model: this.provider.embedding(this.model),
       value,
+      maxRetries: 0,
       providerOptions: {
         openai: {
           dimensions: this.dimensions,
         } satisfies OpenAIEmbeddingModelOptions,
       },
     });
+    const usageTokens = result.usage.tokens;
+    if (Number.isFinite(usageTokens) && usageTokens > 0) {
+      this.progress?.addEmbeddingTokens(usageTokens, false);
+    } else {
+      this.progress?.addEmbeddingTokens(estimateTokens(value), true);
+    }
     return result.embedding;
   }
 
@@ -154,11 +222,14 @@ class OpenAiEmbeddingProvider implements EmbeddingProvider {
   }
 }
 
-export function createEmbeddingProvider(config: AppConfig): EmbeddingProvider {
+export function createEmbeddingProvider(
+  config: AppConfig,
+  progress?: ProgressReporter
+): EmbeddingProvider {
   switch (config.embedding.provider) {
     case 'google':
-      return new GoogleEmbeddingProvider(config);
+      return new GoogleEmbeddingProvider(config, progress);
     case 'openai':
-      return new OpenAiEmbeddingProvider(config);
+      return new OpenAiEmbeddingProvider(config, progress);
   }
 }

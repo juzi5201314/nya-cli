@@ -7,6 +7,7 @@ import { parseHTML } from 'linkedom';
 import TurndownService from 'turndown';
 
 import type { AppConfig, WebFetchMode } from '../types/config';
+import { createFetchWithPolicies } from '../utils/fetch';
 import type {
   WebFetchedPage,
   WebIngestProvider,
@@ -34,11 +35,24 @@ function normalizeUrl(url: string): string {
 
 class TavilyWebSearchProvider implements WebSearchProvider {
   readonly id = 'tavily' as const;
+  private readonly fetch;
 
-  constructor(private readonly config: AppConfig) {}
+  constructor(private readonly config: AppConfig) {
+    const tavilyConfig = config.web.search.providers.tavily;
+    this.fetch = createFetchWithPolicies({
+      rateLimit: {
+        rpm: tavilyConfig.rpm,
+        tpm: tavilyConfig.tpm,
+      },
+      retry: {
+        maxRetries: tavilyConfig.retry_max_retries,
+        delayMs: tavilyConfig.retry_delay_seconds * 1000,
+      },
+    });
+  }
 
   async search(query: string): Promise<WebSearchResult[]> {
-    const response = await fetch('https://api.tavily.com/search', {
+    const response = await this.fetch('https://api.tavily.com/search', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${readRequiredEnv(
@@ -328,8 +342,21 @@ type CloudflareCrawlJobRecordsResponse = {
 
 class CloudflareWebIngestProvider implements WebIngestProvider {
   readonly id = 'cloudflare' as const;
+  private readonly fetch;
 
-  constructor(private readonly config: AppConfig) {}
+  constructor(private readonly config: AppConfig) {
+    const cloudflareConfig = config.web.ingest.providers.cloudflare;
+    this.fetch = createFetchWithPolicies({
+      rateLimit: {
+        rpm: cloudflareConfig.rpm,
+        tpm: cloudflareConfig.tpm,
+      },
+      retry: {
+        maxRetries: cloudflareConfig.retry_max_retries,
+        delayMs: cloudflareConfig.retry_delay_seconds * 1000,
+      },
+    });
+  }
 
   async assertAvailable(): Promise<void> {
     const cloudflareConfig = this.config.web.ingest.providers.cloudflare;
@@ -342,7 +369,7 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
     readRequiredEnv(cloudflareConfig.api_token_env);
   }
 
-  private headers(): HeadersInit {
+  private headers(): Record<string, string> {
     const cloudflareConfig = this.config.web.ingest.providers.cloudflare;
     return {
       Authorization: `Bearer ${readRequiredEnv(cloudflareConfig.api_token_env)}`,
@@ -364,7 +391,7 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
     const cloudflareConfig = this.config.web.ingest.providers.cloudflare;
     const accountId = cloudflareConfig.account_id.trim();
 
-    const response = await fetch(
+    const response = await this.fetch(
       this.endpoint(`/accounts/${accountId}/browser-rendering/crawl`),
       {
         method: 'POST',
@@ -388,7 +415,9 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
 
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(`Cloudflare /crawl 请求失败 (${response.status}): ${body}`);
+      throw new Error(
+        `Cloudflare /crawl 请求失败 (${response.status}): ${body}`
+      );
     }
 
     const json = (await response.json()) as {
@@ -415,8 +444,12 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
     const cloudflareConfig = this.config.web.ingest.providers.cloudflare;
     const accountId = cloudflareConfig.account_id.trim();
 
-    for (let attempt = 0; attempt < cloudflareConfig.max_poll_attempts; attempt += 1) {
-      const response = await fetch(
+    for (
+      let attempt = 0;
+      attempt < cloudflareConfig.max_poll_attempts;
+      attempt += 1
+    ) {
+      const response = await this.fetch(
         this.endpoint(
           `/accounts/${accountId}/browser-rendering/crawl/${jobId}?limit=1`
         ),
@@ -477,7 +510,7 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
         params.set('cursor', String(cursor));
       }
 
-      const response = await fetch(
+      const response = await this.fetch(
         this.endpoint(
           `/accounts/${accountId}/browser-rendering/crawl/${jobId}?${params.toString()}`
         ),
@@ -608,7 +641,7 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
 
     try {
       return await tryRender(false, cloudflareConfig.min_markdown_chars);
-    } catch (error) {
+    } catch {
       try {
         return await tryRender(true, 1);
       } catch {
@@ -666,11 +699,16 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
 
     try {
       return await tryRender(false, 1);
-    } catch (error) {
+    } catch {
       try {
         return await tryRender(true, 1);
       } catch {
-        return await this.runCrawlOnce({ url, maxPages, maxDepth, render: false });
+        return await this.runCrawlOnce({
+          url,
+          maxPages,
+          maxDepth,
+          render: false,
+        });
       }
     }
   }

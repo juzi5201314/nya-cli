@@ -5,6 +5,7 @@ import type {
   EmbeddingFingerprint,
   EmbeddingProvider,
 } from '../../providers/types';
+import type { ProgressReporter } from '../../tui/types';
 import type { AppConfig, ScopeMode } from '../../types/config';
 import { sha256 } from '../../utils/hash';
 import { chunkTextDocument } from '../chunking/chunk-text';
@@ -36,6 +37,7 @@ export async function learnGitSource(args: {
   rebuildTriggered: boolean;
   rebuildReason: string | null;
   recordManifest?: boolean;
+  progress?: ProgressReporter;
 }): Promise<LearnGitResult> {
   const resolvedSource = await resolveGitSource({
     source: args.source,
@@ -46,6 +48,7 @@ export async function learnGitSource(args: {
     config: args.config,
   });
 
+  const fileTask = args.progress?.task('Index git files', repoFiles.length);
   const preparedDocuments = [];
   for (const repoFile of repoFiles) {
     const chunks = chunkTextDocument({
@@ -54,6 +57,7 @@ export async function learnGitSource(args: {
       config: args.config,
     });
     if (chunks.length === 0) {
+      fileTask?.increment(1);
       continue;
     }
 
@@ -85,7 +89,10 @@ export async function learnGitSource(args: {
       })),
       embedding: embeddings,
     });
+
+    fileTask?.increment(1);
   }
+  fileTask?.stop();
 
   const counts = replaceSourceData({
     db: args.db,

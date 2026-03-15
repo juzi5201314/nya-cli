@@ -61,6 +61,10 @@ function createConfig(args: { baseUrl: string }): AppConfig {
             api_key_env: 'TAVILY_API_KEY',
             default_topic: 'general',
             default_search_depth: 'basic',
+            rpm: 0,
+            tpm: 0,
+            retry_max_retries: 3,
+            retry_delay_seconds: 10,
           },
         },
       },
@@ -78,6 +82,10 @@ function createConfig(args: { baseUrl: string }): AppConfig {
             get_timeout_seconds: 30,
             fetch_timeout_ms: 30000,
             fetch_wait_ms: 0,
+            rpm: 0,
+            tpm: 0,
+            retry_max_retries: 3,
+            retry_delay_seconds: 10,
           },
           cloudflare: {
             account_id: 'test-account',
@@ -95,6 +103,10 @@ function createConfig(args: { baseUrl: string }): AppConfig {
             include_subdomains: false,
             include_patterns: [],
             exclude_patterns: [],
+            rpm: 0,
+            tpm: 0,
+            retry_max_retries: 3,
+            retry_delay_seconds: 10,
           },
         },
       },
@@ -107,11 +119,19 @@ function createConfig(args: { baseUrl: string }): AppConfig {
         google: {
           api_key_env: 'GOOGLE_GENERATIVE_AI_API_KEY',
           output_dimensionality: 4,
+          rpm: 0,
+          tpm: 0,
+          retry_max_retries: 3,
+          retry_delay_seconds: 10,
         },
         openai: {
           api_key_env: 'OPENAI_API_KEY',
           base_url: 'https://api.openai.com/v1',
           dimensions: 4,
+          rpm: 0,
+          tpm: 0,
+          retry_max_retries: 3,
+          retry_delay_seconds: 10,
         },
       },
     },
@@ -124,10 +144,18 @@ function createConfig(args: { baseUrl: string }): AppConfig {
       providers: {
         google: {
           api_key_env: 'GOOGLE_GENERATIVE_AI_API_KEY',
+          rpm: 0,
+          tpm: 0,
+          retry_max_retries: 3,
+          retry_delay_seconds: 10,
         },
         openai: {
           api_key_env: 'OPENAI_API_KEY',
           base_url: 'https://api.openai.com/v1',
+          rpm: 0,
+          tpm: 0,
+          retry_max_retries: 3,
+          retry_delay_seconds: 10,
         },
       },
     },
@@ -190,17 +218,24 @@ describe('learn web (cloudflare)', () => {
           return Response.json({ success: true, result: jobId });
         }
 
-        const match = /^\/client\/v4\/accounts\/test-account\/browser-rendering\/crawl\/([^/]+)$/.exec(
-          pathname
-        );
+        const match =
+          /^\/client\/v4\/accounts\/test-account\/browser-rendering\/crawl\/([^/]+)$/.exec(
+            pathname
+          );
         if (request.method === 'GET' && match) {
           const jobId = match[1] ?? '';
           const job = jobs.get(jobId);
           if (!job) {
-            return Response.json({ success: false, errors: ['not found'] }, { status: 404 });
+            return Response.json(
+              { success: false, errors: ['not found'] },
+              { status: 404 }
+            );
           }
 
-          if (url.searchParams.get('limit') === '1' && !url.searchParams.get('status')) {
+          if (
+            url.searchParams.get('limit') === '1' &&
+            !url.searchParams.get('status')
+          ) {
             return Response.json({
               success: true,
               result: { id: jobId, status: 'completed' },
@@ -316,17 +351,24 @@ describe('learn web (cloudflare)', () => {
           return Response.json({ success: true, result: jobId });
         }
 
-        const match = /^\/client\/v4\/accounts\/test-account\/browser-rendering\/crawl\/([^/]+)$/.exec(
-          pathname
-        );
+        const match =
+          /^\/client\/v4\/accounts\/test-account\/browser-rendering\/crawl\/([^/]+)$/.exec(
+            pathname
+          );
         if (request.method === 'GET' && match) {
           const jobId = match[1] ?? '';
           const job = jobs.get(jobId);
           if (!job) {
-            return Response.json({ success: false, errors: ['not found'] }, { status: 404 });
+            return Response.json(
+              { success: false, errors: ['not found'] },
+              { status: 404 }
+            );
           }
 
-          if (url.searchParams.get('limit') === '1' && !url.searchParams.get('status')) {
+          if (
+            url.searchParams.get('limit') === '1' &&
+            !url.searchParams.get('status')
+          ) {
             return Response.json({
               success: true,
               result: { id: jobId, status: 'completed' },
@@ -338,21 +380,24 @@ describe('learn web (cloudflare)', () => {
 
           const all = [
             {
-              url: `${job.url}`.replace(/\/+$/, '') + '/',
+              url: `${job.url.replace(/\/+$/, '')}/`,
               status: 'completed',
-              markdown: '# Home\n\nFirst page content is long enough for indexing.',
+              markdown:
+                '# Home\n\nFirst page content is long enough for indexing.',
               metadata: { status: 200, title: 'Home', url: `${job.url}` },
             },
             {
-              url: `${job.url}`.replace(/\/+$/, '') + '/guide',
+              url: `${job.url.replace(/\/+$/, '')}/guide`,
               status: 'completed',
-              markdown: '# Guide\n\nSecond page content is also long enough for indexing.',
+              markdown:
+                '# Guide\n\nSecond page content is also long enough for indexing.',
               metadata: { status: 200, title: 'Guide', url: `${job.url}` },
             },
           ];
 
           const batch = all.slice(offset, offset + 1);
-          const nextCursor = offset + batch.length < all.length ? offset + batch.length : null;
+          const nextCursor =
+            offset + batch.length < all.length ? offset + batch.length : null;
 
           return Response.json({
             success: true,
@@ -411,4 +456,3 @@ describe('learn web (cloudflare)', () => {
     }
   });
 });
-

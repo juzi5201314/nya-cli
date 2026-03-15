@@ -12,6 +12,7 @@ import type {
   EmbeddingProvider,
   WebIngestProvider,
 } from '../../providers/types';
+import type { ProgressReporter } from '../../tui/types';
 import type { AppConfig, ScopeMode, WebFetchMode } from '../../types/config';
 import { sha256 } from '../../utils/hash';
 import { chunkTextDocument } from '../chunking/chunk-text';
@@ -57,6 +58,7 @@ async function collectPages(args: {
   fetchMode: WebFetchMode;
   config: AppConfig;
   provider: WebIngestProvider;
+  progress?: ProgressReporter;
 }): Promise<
   Array<{
     sourceKey: string;
@@ -88,6 +90,7 @@ async function collectPages(args: {
   }> = [];
 
   if (args.crawl && args.provider.crawl) {
+    const crawlTask = args.progress?.task('Crawl pages', args.maxPages);
     const crawled = await args.provider.crawl(normalizeUrl(args.rootUrl), {
       maxPages: args.maxPages,
       maxDepth: args.maxDepth,
@@ -105,11 +108,14 @@ async function collectPages(args: {
         content: page.markdown,
         contentHash: sha256(page.markdown),
       });
+      crawlTask?.increment(1);
     }
 
+    crawlTask?.stop();
     return pages;
   }
 
+  const crawlTask = args.progress?.task('Crawl pages', args.maxPages);
   while (queue.length > 0 && pages.length < args.maxPages) {
     const next = queue.shift();
     if (!next) {
@@ -136,6 +142,7 @@ async function collectPages(args: {
       content: page.markdown,
       contentHash: sha256(page.markdown),
     });
+    crawlTask?.increment(1);
 
     if (!args.crawl || next.depth >= args.maxDepth) {
       continue;
@@ -160,6 +167,7 @@ async function collectPages(args: {
     }
   }
 
+  crawlTask?.stop();
   return pages;
 }
 
@@ -178,6 +186,7 @@ export async function learnWebSource(args: {
   maxDepth: number;
   fetchMode: WebFetchMode;
   recordManifest?: boolean;
+  progress?: ProgressReporter;
 }): Promise<LearnWebResult> {
   await args.webIngestProvider.assertAvailable();
 
@@ -189,8 +198,10 @@ export async function learnWebSource(args: {
     fetchMode: args.fetchMode,
     config: args.config,
     provider: args.webIngestProvider,
+    ...(args.progress ? { progress: args.progress } : {}),
   });
 
+  const embedTask = args.progress?.task('Embed pages', pages.length);
   const preparedDocuments = [];
   for (const page of pages) {
     const chunks = chunkTextDocument({
@@ -199,6 +210,7 @@ export async function learnWebSource(args: {
       config: args.config,
     });
     if (chunks.length === 0) {
+      embedTask?.increment(1);
       continue;
     }
 
@@ -226,7 +238,10 @@ export async function learnWebSource(args: {
       })),
       embedding: embeddings,
     });
+
+    embedTask?.increment(1);
   }
+  embedTask?.stop();
 
   const sourceKey = normalizeUrl(args.source);
   const counts = replaceSourceData({

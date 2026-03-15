@@ -19,6 +19,7 @@ type GlobalOptions = {
   json?: boolean;
   project?: boolean;
   global?: boolean;
+  tui?: boolean;
 };
 
 export function createCli() {
@@ -28,6 +29,7 @@ export function createCli() {
     .command('learn <kind> <source>', '学习本地或远程数据源')
     .option('--config <path>', '指定 nya.toml 路径')
     .option('--json', '以 JSON 输出结果')
+    .option('--no-tui', '禁用 TUI 输出')
     .option('--project', '使用当前项目作用域数据库')
     .option('--crawl', '启用多页 crawl')
     .option('--max-pages <number>', '最多抓取页数')
@@ -50,6 +52,7 @@ export function createCli() {
             configPath: options.config,
             project: Boolean(options.project),
             asJson: Boolean(options.json),
+            noTui: options.tui === false,
           });
           return;
         }
@@ -60,6 +63,7 @@ export function createCli() {
             configPath: options.config,
             project: Boolean(options.project),
             asJson: Boolean(options.json),
+            noTui: options.tui === false,
             crawl: Boolean(options.crawl),
             maxPages: options.maxPages
               ? Number.parseInt(options.maxPages, 10)
@@ -80,6 +84,7 @@ export function createCli() {
     .command('search <query>', '搜索本地知识库')
     .option('--config <path>', '指定 nya.toml 路径')
     .option('--json', '以 JSON 输出结果')
+    .option('--no-tui', '禁用 TUI 输出')
     .option('--project', '使用当前项目作用域数据库')
     .option('--limit <number>', '结果数量', {
       default: '8',
@@ -100,6 +105,7 @@ export function createCli() {
     .command('ai-search <query>', '使用 LLM 驱动的自然语言搜索本地知识库')
     .option('--config <path>', '指定 nya.toml 路径')
     .option('--json', '以 JSON 输出结果')
+    .option('--no-tui', '禁用 TUI 输出')
     .option('--project', '使用当前项目作用域数据库')
     .option('--limit <number>', '每个检索 query 的结果数量', {
       default: '8',
@@ -140,6 +146,7 @@ export function createCli() {
     .command('db <subcommand>', '数据库命令')
     .option('--config <path>', '指定 nya.toml 路径')
     .option('--json', '以 JSON 输出结果')
+    .option('--no-tui', '禁用 TUI 输出')
     .option('--project', '使用当前项目作用域数据库')
     .option('--global', '使用全局作用域数据库')
     .option('--yes', '确认危险操作')
@@ -204,6 +211,7 @@ export function createCli() {
             configPath: options.config,
             scope,
             asJson: Boolean(options.json),
+            noTui: options.tui === false,
             sourceKey: options.source,
             retryCount: Number.parseInt(options.retry ?? '2', 10),
             failFast: Boolean(options.failFast),
@@ -220,6 +228,7 @@ export function createCli() {
     .command('web <subcommand> <query>', '公网搜索命令')
     .option('--config <path>', '指定 nya.toml 路径')
     .option('--json', '以 JSON 输出结果')
+    .option('--no-tui', '禁用 TUI 输出')
     .action(
       async (subcommand: string, query: string, options: GlobalOptions) => {
         if (subcommand !== 'search') {

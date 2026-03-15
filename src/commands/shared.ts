@@ -17,6 +17,7 @@ import {
   createWebIngestProvider,
   createWebSearchProvider,
 } from '../providers/web';
+import type { ProgressReporter } from '../tui/types';
 import type { ScopeMode } from '../types/config';
 
 export function resolveDefaultScope(project: boolean): ScopeMode {
@@ -54,6 +55,7 @@ export async function loadOperationRuntime(args: {
   configPath: string | undefined;
   scope: ScopeMode;
   autoRebuild?: boolean;
+  progress?: ProgressReporter;
 }) {
   await loadProjectEnv(args.configPath);
   const { config, path: configPath } = await loadConfig(args.configPath);
@@ -64,8 +66,8 @@ export async function loadOperationRuntime(args: {
     projectDirName: config.app.project_dir_name,
   });
   const db = await openDatabase(scopePaths.databasePath);
-  const embeddingProvider = createEmbeddingProvider(config);
-  const llmProvider = createLlmProvider(config);
+  const embeddingProvider = createEmbeddingProvider(config, args.progress);
+  const llmProvider = createLlmProvider(config, args.progress);
   const webSearchProvider = createWebSearchProvider(config);
   const webIngestProvider = createWebIngestProvider(config);
 
@@ -88,6 +90,7 @@ export async function loadOperationRuntime(args: {
           scopePaths,
           embeddingProvider,
           webIngestProvider,
+          ...(args.progress ? { progress: args.progress } : {}),
         });
 
   return {

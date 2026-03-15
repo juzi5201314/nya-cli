@@ -1,5 +1,6 @@
 import { learnGitSource } from '../core/ingest/learn-git';
 import { learnWebSource } from '../core/ingest/learn-web';
+import { createInkProgressReporter } from '../tui/ink-progress';
 import type { WebFetchMode } from '../types/config';
 import { closeDatabase, loadOperationRuntime, printOutput } from './shared';
 
@@ -8,10 +9,15 @@ export async function runLearnGit(args: {
   configPath: string | undefined;
   project: boolean;
   asJson: boolean;
+  noTui: boolean;
 }): Promise<void> {
+  const progress = await createInkProgressReporter({
+    enabled: !args.asJson && !args.noTui && Boolean(process.stderr.isTTY),
+  });
   const runtime = await loadOperationRuntime({
     configPath: args.configPath,
     scope: args.project ? 'project' : 'global',
+    progress,
   });
 
   try {
@@ -30,6 +36,7 @@ export async function runLearnGit(args: {
       embeddingProvider: runtime.embeddingProvider,
       rebuildTriggered: runtime.lifecycle.rebuildTriggered,
       rebuildReason: runtime.lifecycle.reason,
+      progress,
     });
 
     if (args.asJson) {
@@ -50,6 +57,7 @@ export async function runLearnGit(args: {
       false
     );
   } finally {
+    progress.stopAll();
     closeDatabase(runtime.db);
   }
 }
@@ -59,14 +67,19 @@ export async function runLearnWeb(args: {
   configPath: string | undefined;
   project: boolean;
   asJson: boolean;
+  noTui: boolean;
   crawl: boolean;
   maxPages: number | undefined;
   maxDepth: number | undefined;
   fetchMode: WebFetchMode | undefined;
 }): Promise<void> {
+  const progress = await createInkProgressReporter({
+    enabled: !args.asJson && !args.noTui && Boolean(process.stderr.isTTY),
+  });
   const runtime = await loadOperationRuntime({
     configPath: args.configPath,
     scope: args.project ? 'project' : 'global',
+    progress,
   });
 
   try {
@@ -95,6 +108,7 @@ export async function runLearnWeb(args: {
       maxPages: args.maxPages ?? providerConfig.default_max_pages,
       maxDepth: args.maxDepth ?? providerConfig.default_max_depth,
       fetchMode: args.fetchMode ?? providerConfig.default_fetch_mode,
+      progress,
     });
 
     if (args.asJson) {
@@ -116,6 +130,7 @@ export async function runLearnWeb(args: {
       false
     );
   } finally {
+    progress.stopAll();
     closeDatabase(runtime.db);
   }
 }

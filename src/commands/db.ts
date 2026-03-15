@@ -1,4 +1,5 @@
 import { rebuildSourcesFromManifest } from '../core/ingest/rebuild-sources';
+import { createInkProgressReporter } from '../tui/ink-progress';
 import {
   clearDatabase,
   closeDatabase,
@@ -153,15 +154,20 @@ export async function runDbRebuild(args: {
   configPath: string | undefined;
   scope: 'global' | 'project';
   asJson: boolean;
+  noTui: boolean;
   sourceKey: string | undefined;
   retryCount: number;
   failFast: boolean;
   failedOnly: boolean;
 }): Promise<void> {
+  const progress = await createInkProgressReporter({
+    enabled: !args.asJson && !args.noTui && Boolean(process.stderr.isTTY),
+  });
   const runtime = await loadOperationRuntime({
     configPath: args.configPath,
     scope: args.scope,
     autoRebuild: false,
+    progress,
   });
 
   try {
@@ -176,6 +182,7 @@ export async function runDbRebuild(args: {
       retryCount: args.retryCount,
       failFast: args.failFast,
       failedOnly: args.failedOnly,
+      progress,
     });
 
     if (args.asJson) {
@@ -227,6 +234,7 @@ export async function runDbRebuild(args: {
       process.exitCode = 1;
     }
   } finally {
+    progress.stopAll();
     closeDatabase(runtime.db);
   }
 }

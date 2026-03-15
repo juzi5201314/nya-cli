@@ -14,6 +14,7 @@ import type {
   EmbeddingProvider,
   WebIngestProvider,
 } from '../../providers/types';
+import type { ProgressReporter } from '../../tui/types';
 import type { AppConfig, ScopeMode } from '../../types/config';
 import { learnGitSource } from './learn-git';
 import { learnWebSource } from './learn-web';
@@ -74,6 +75,7 @@ async function reingestManifest(args: {
   scopePaths: ScopePaths;
   embeddingProvider: EmbeddingProvider;
   webIngestProvider: WebIngestProvider;
+  progress?: ProgressReporter;
 }): Promise<RebuildSourceResult> {
   const payload = parsePayload(args.manifest);
 
@@ -88,6 +90,7 @@ async function reingestManifest(args: {
       rebuildTriggered: false,
       rebuildReason: null,
       recordManifest: true,
+      ...(args.progress ? { progress: args.progress } : {}),
     });
 
     return {
@@ -115,6 +118,7 @@ async function reingestManifest(args: {
     maxDepth: payload.maxDepth,
     fetchMode: payload.fetchMode,
     recordManifest: true,
+    ...(args.progress ? { progress: args.progress } : {}),
   });
 
   return {
@@ -138,6 +142,7 @@ export async function rebuildSourcesFromManifest(args: {
   retryCount: number;
   failFast: boolean;
   failedOnly: boolean;
+  progress?: ProgressReporter;
 }): Promise<RebuildSummary> {
   const manifests = args.sourceKey
     ? (() => {
@@ -203,6 +208,7 @@ export async function rebuildSourcesFromManifest(args: {
 
   const succeeded: RebuildSourceResult[] = [];
   const failed: RebuildFailureResult[] = [];
+  const sourceTask = args.progress?.task('Rebuild sources', manifests.length);
   for (const manifest of manifests) {
     let lastError: unknown;
     let attempts = 0;
@@ -218,6 +224,7 @@ export async function rebuildSourcesFromManifest(args: {
           scopePaths: args.scopePaths,
           embeddingProvider: args.embeddingProvider,
           webIngestProvider: args.webIngestProvider,
+          ...(args.progress ? { progress: args.progress } : {}),
         });
         succeeded.push(result);
         updateSourceManifestRebuildState(args.db, manifest.sourceKey, {
@@ -254,11 +261,15 @@ export async function rebuildSourcesFromManifest(args: {
       });
 
       if (args.failFast) {
+        sourceTask?.increment(1);
         break;
       }
     }
+
+    sourceTask?.increment(1);
   }
 
+  sourceTask?.stop();
   return {
     succeeded,
     failed,
@@ -272,6 +283,7 @@ export async function autoRebuildIfNeeded(args: {
   scopePaths: ScopePaths;
   embeddingProvider: EmbeddingProvider;
   webIngestProvider: WebIngestProvider;
+  progress?: ProgressReporter;
 }): Promise<{ rebuildTriggered: boolean; reason: string | null }> {
   const fingerprint = args.embeddingProvider.fingerprint(
     args.config.index.chunking_version
@@ -304,6 +316,7 @@ export async function autoRebuildIfNeeded(args: {
     retryCount: 0,
     failFast: true,
     failedOnly: false,
+    ...(args.progress ? { progress: args.progress } : {}),
   });
 
   if (summary.failed.length > 0) {

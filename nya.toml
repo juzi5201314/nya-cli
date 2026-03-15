@@ -9,6 +9,10 @@ provider = "tavily"
 api_key_env = "TAVILY_API_KEY"
 default_topic = "general"
 default_search_depth = "basic"
+rpm = 0
+tpm = 0
+retry_max_retries = 3
+retry_delay_seconds = 10
 
 [web.ingest]
 provider = "scrapling"
@@ -24,6 +28,10 @@ min_markdown_chars = 200
 get_timeout_seconds = 30
 fetch_timeout_ms = 30000
 fetch_wait_ms = 0
+rpm = 0
+tpm = 0
+retry_max_retries = 3
+retry_delay_seconds = 10
 
 [web.ingest.providers.cloudflare]
 account_id = ""
@@ -41,20 +49,32 @@ include_external_links = false
 include_subdomains = false
 include_patterns = []
 exclude_patterns = []
+rpm = 0
+tpm = 0
+retry_max_retries = 3
+retry_delay_seconds = 10
 
 [embedding]
-provider = "google"
-model = "gemini-embedding-001"
+provider = "openai"
+model = "v5-small-retrieval"
 task_type = "RETRIEVAL_DOCUMENT"
 
 [embedding.providers.google]
 api_key_env = "GOOGLE_GENERATIVE_AI_API_KEY"
 output_dimensionality = 1536
+rpm = 0
+tpm = 0
+retry_max_retries = 3
+retry_delay_seconds = 10
 
 [embedding.providers.openai]
 api_key_env = "OPENAI_API_KEY"
-base_url = "https://api.openai.com/v1"
-dimensions = 1536
+base_url = "http://127.0.0.1:8080/v1"
+dimensions = 1024
+rpm = 0
+tpm = 0
+retry_max_retries = 3
+retry_delay_seconds = 10
 
 [rerank]
 provider = "none"
@@ -65,10 +85,18 @@ model = "gemma-3-27b-it"
 
 [llm.providers.google]
 api_key_env = "GOOGLE_GENERATIVE_AI_API_KEY"
+rpm = 0
+tpm = 0
+retry_max_retries = 3
+retry_delay_seconds = 10
 
 [llm.providers.openai]
 api_key_env = "OPENAI_API_KEY"
 base_url = "https://api.openai.com/v1"
+rpm = 0
+tpm = 0
+retry_max_retries = 3
+retry_delay_seconds = 10
 
 [ai_search]
 max_steps = 3

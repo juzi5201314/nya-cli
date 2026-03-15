@@ -4,6 +4,8 @@ dist/
 coverage/
 .DS_Store
 .env
+.bun-install/
+.bun-tmp/
 
 .nya-cli/
 *.sqlite
