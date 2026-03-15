@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.cache/
+coverage/
+.DS_Store
+.env
+
+.nya-cli/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

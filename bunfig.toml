@@ -1,0 +1,7 @@
+[install]
+saveTextLockfile = true
+auto = "disable"
+
+[test]
+root = "./tests"
+pathIgnorePatterns = ["fixtures/**"]

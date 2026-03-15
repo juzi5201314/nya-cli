@@ -1,0 +1,33 @@
+{
+  "name": "nya-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Knowledge base CLI for agents",
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "build": "bun build src/index.ts --target bun --outfile dist/nya",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run typecheck && biome check ."
+  },
+  "dependencies": {
+    "@ai-sdk/google": "^3.0.43",
+    "@ai-sdk/openai": "^3.0.41",
+    "@clack/prompts": "^1.1.0",
+    "@mozilla/readability": "^0.6.0",
+    "ai": "^6.0.116",
+    "cac": "^7.0.0",
+    "env-paths": "^4.0.0",
+    "linkedom": "^0.18.12",
+    "pino": "^10.3.1",
+    "sqlite-vec": "^0.1.7-alpha.2",
+    "turndown": "^7.2.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.7",
+    "@types/bun": "^1.3.10",
+    "typescript": "^5.9.3"
+  }
+}
