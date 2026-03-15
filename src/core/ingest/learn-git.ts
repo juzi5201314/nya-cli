@@ -78,6 +78,7 @@ export async function learnGitSource(args: {
         language: repoFile.language,
         title: repoFile.title,
         contentHash: sha256(repoFile.content),
+        content: repoFile.content,
       },
       chunks: chunks.map((chunk, index) => ({
         documentId: 0,

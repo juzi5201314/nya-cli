@@ -7,7 +7,7 @@ import * as sqliteVec from 'sqlite-vec';
 import type { EmbeddingFingerprint } from '../providers/types';
 import { extractSearchTerms } from '../utils/text';
 
-const SCHEMA_VERSION = '3';
+const SCHEMA_VERSION = '4';
 
 type MetadataKey =
   | 'schema_version'
@@ -40,6 +40,7 @@ export type LearnDocumentRow = {
   language: string;
   title: string;
   contentHash: string;
+  content: string;
 };
 
 export type SourceManifestRow = {
@@ -195,6 +196,14 @@ function deleteMetadata(db: Database, key: MetadataKey): void {
 function ensureSchema(db: Database): void {
   const version = getMetadata(db, 'schema_version')?.value;
   if (version === SCHEMA_VERSION) {
+    if (columnExists(db, 'documents', 'content')) {
+      backfillDocumentContentColumn(db);
+    }
+    return;
+  }
+
+  if (version === '3') {
+    migrateSchemaV3ToV4(db);
     return;
   }
 
@@ -209,6 +218,21 @@ function tableExists(db: Database, tableName: string): boolean {
     )
     .get(tableName);
   return Boolean(row);
+}
+
+function columnExists(
+  db: Database,
+  tableName: string,
+  columnName: string
+): boolean {
+  if (!tableExists(db, tableName)) {
+    return false;
+  }
+
+  const rows = db
+    .query<{ name: string }, []>(`PRAGMA table_info(${tableName})`)
+    .all();
+  return rows.some((row) => row.name === columnName);
 }
 
 function ensureSourceManifestTable(db: Database): void {
@@ -244,6 +268,7 @@ function createSearchTables(db: Database, options: SearchTablesOptions): void {
       language TEXT NOT NULL,
       title TEXT NOT NULL,
       content_hash TEXT NOT NULL,
+      content TEXT NOT NULL,
       created_at TEXT NOT NULL,
       UNIQUE(source_key, path)
     );
@@ -284,6 +309,113 @@ function resetManagedState(db: Database): void {
   dropSearchTables(db);
   db.run('DROP TABLE IF EXISTS source_manifests;');
   db.run('DELETE FROM index_metadata;');
+}
+
+function mergeChunkContent(base: string, next: string): string {
+  if (!base) {
+    return next;
+  }
+  if (!next) {
+    return base;
+  }
+
+  const maxOverlap = Math.min(base.length, next.length);
+  for (let overlap = maxOverlap; overlap >= 8; overlap -= 1) {
+    if (base.endsWith(next.slice(0, overlap))) {
+      return `${base}${next.slice(overlap)}`;
+    }
+  }
+
+  return `${base}\n\n${next}`;
+}
+
+function reconstructDocumentContents(
+  db: Database,
+  documentIds: number[]
+): Map<number, string> {
+  if (documentIds.length === 0 || !tableExists(db, 'chunks')) {
+    return new Map();
+  }
+
+  const placeholders = documentIds
+    .map((_, index) => `?${index + 1}`)
+    .join(', ');
+  const rows = db
+    .query<
+      { documentId: number; chunkIndex: number; content: string },
+      number[]
+    >(
+      `
+        SELECT
+          document_id AS documentId,
+          chunk_index AS chunkIndex,
+          content
+        FROM chunks
+        WHERE document_id IN (${placeholders})
+        ORDER BY document_id, chunk_index
+      `
+    )
+    .all(...documentIds)
+    .map((row) => ({
+      ...row,
+      documentId: Number(row.documentId),
+      chunkIndex: Number(row.chunkIndex),
+    }));
+
+  const contentMap = new Map<number, string>();
+  for (const row of rows) {
+    const current = contentMap.get(row.documentId) ?? '';
+    contentMap.set(row.documentId, mergeChunkContent(current, row.content));
+  }
+
+  return contentMap;
+}
+
+function backfillDocumentContentColumn(db: Database): void {
+  if (!columnExists(db, 'documents', 'content')) {
+    return;
+  }
+
+  const rows = db
+    .query<{ documentId: number; content: string | null }, []>(
+      `
+        SELECT id AS documentId, content
+        FROM documents
+        WHERE content IS NULL OR content = ''
+        ORDER BY id
+      `
+    )
+    .all()
+    .map((row) => ({
+      ...row,
+      documentId: Number(row.documentId),
+    }));
+
+  const reconstructed = reconstructDocumentContents(
+    db,
+    rows.map((row) => row.documentId)
+  );
+  const updateContent = db.prepare(
+    'UPDATE documents SET content = ?2 WHERE id = ?1'
+  );
+
+  for (const row of rows) {
+    updateContent.run(row.documentId, reconstructed.get(row.documentId) ?? '');
+  }
+}
+
+function migrateSchemaV3ToV4(db: Database): void {
+  if (!tableExists(db, 'documents')) {
+    setMetadata(db, 'schema_version', SCHEMA_VERSION);
+    return;
+  }
+
+  if (!columnExists(db, 'documents', 'content')) {
+    db.run('ALTER TABLE documents ADD COLUMN content TEXT;');
+  }
+
+  backfillDocumentContentColumn(db);
+  setMetadata(db, 'schema_version', SCHEMA_VERSION);
 }
 
 export function getStoredFingerprint(
@@ -631,8 +763,9 @@ export function replaceSourceData(args: {
         language,
         title,
         content_hash,
+        content,
         created_at
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
     `
   );
   const insertChunk = db.prepare(
@@ -672,6 +805,7 @@ export function replaceSourceData(args: {
         entry.document.language,
         entry.document.title,
         entry.document.contentHash,
+        entry.document.content,
         createdAt
       );
       const documentId = Number(documentResult.lastInsertRowid);
@@ -712,10 +846,26 @@ export function replaceSourceData(args: {
 
 export type SearchHitRow = {
   id: number;
+  documentId: number;
+  sourceKey: string;
   content: string;
   section: string;
   path: string;
   sourceKind: string;
+};
+
+export type StoredDocumentRow = {
+  documentId: number;
+  sourceKey: string;
+  sourceKind: SourceKind;
+  sourceLocator: string;
+  canonicalLocator: string | null;
+  path: string;
+  language: string;
+  title: string;
+  contentHash: string;
+  content: string;
+  createdAt: string;
 };
 
 export function searchVector(
@@ -862,6 +1012,138 @@ export function searchMetadataLike(
   return rows.map((row) => Number(row.chunkId));
 }
 
+function normalizeDocumentLookupPath(path: string): string {
+  if (/^[a-z]+:\/\//i.test(path)) {
+    return path;
+  }
+
+  return path.replaceAll('\\', '/').replace(/^\.\//, '');
+}
+
+type StoredDocumentQueryRow = {
+  documentId: number;
+  sourceKey: string;
+  sourceKind: SourceKind;
+  sourceLocator: string;
+  canonicalLocator: string | null;
+  path: string;
+  language: string;
+  title: string;
+  contentHash: string;
+  content: string | null;
+  createdAt: string;
+};
+
+function hydrateStoredDocuments(
+  db: Database,
+  rows: StoredDocumentQueryRow[]
+): StoredDocumentRow[] {
+  const missingContentIds = rows
+    .filter((row) => !row.content)
+    .map((row) => Number(row.documentId));
+  const reconstructed = reconstructDocumentContents(db, missingContentIds);
+
+  return rows.map((row) => ({
+    ...row,
+    documentId: Number(row.documentId),
+    content: row.content ?? reconstructed.get(Number(row.documentId)) ?? '',
+  }));
+}
+
+export function getDocumentById(
+  db: Database,
+  documentId: number
+): StoredDocumentRow | null {
+  if (!tableExists(db, 'documents')) {
+    return null;
+  }
+
+  const row = db
+    .query<StoredDocumentQueryRow, [number]>(
+      `
+        SELECT
+          id AS documentId,
+          source_key AS sourceKey,
+          source_kind AS sourceKind,
+          source_locator AS sourceLocator,
+          canonical_locator AS canonicalLocator,
+          path,
+          language,
+          title,
+          content_hash AS contentHash,
+          content,
+          created_at AS createdAt
+        FROM documents
+        WHERE id = ?1
+      `
+    )
+    .get(documentId);
+
+  if (!row) {
+    return null;
+  }
+
+  return hydrateStoredDocuments(db, [row])[0] ?? null;
+}
+
+export function findDocumentsByPath(
+  db: Database,
+  path: string,
+  sourceKey?: string
+): StoredDocumentRow[] {
+  if (!tableExists(db, 'documents')) {
+    return [];
+  }
+
+  const normalizedPath = normalizeDocumentLookupPath(path);
+
+  const rows = sourceKey
+    ? db
+        .query<StoredDocumentQueryRow, [string, string]>(
+          `
+            SELECT
+              id AS documentId,
+              source_key AS sourceKey,
+              source_kind AS sourceKind,
+              source_locator AS sourceLocator,
+              canonical_locator AS canonicalLocator,
+              path,
+              language,
+              title,
+              content_hash AS contentHash,
+              content,
+              created_at AS createdAt
+            FROM documents
+            WHERE path = ?1 AND source_key = ?2
+            ORDER BY id
+          `
+        )
+        .all(normalizedPath, sourceKey)
+    : db
+        .query<StoredDocumentQueryRow, [string]>(
+          `
+            SELECT
+              id AS documentId,
+              source_key AS sourceKey,
+              source_kind AS sourceKind,
+              source_locator AS sourceLocator,
+              canonical_locator AS canonicalLocator,
+              path,
+              language,
+              title,
+              content_hash AS contentHash,
+              content,
+              created_at AS createdAt
+            FROM documents
+            WHERE path = ?1
+            ORDER BY id
+          `
+        )
+        .all(normalizedPath);
+
+  return hydrateStoredDocuments(db, rows);
+}
+
 export function getSearchHits(
   db: Database,
   chunkIds: number[]
@@ -875,6 +1157,8 @@ export function getSearchHits(
     `
       SELECT
         chunks.id AS id,
+        documents.id AS documentId,
+        documents.source_key AS sourceKey,
         chunks.content AS content,
         chunks.section AS section,
         documents.path AS path,
@@ -888,6 +1172,7 @@ export function getSearchHits(
   return statement.all(...chunkIds).map((row) => ({
     ...row,
     id: Number(row.id),
+    documentId: Number(row.documentId),
   }));
 }
 

@@ -28,6 +28,7 @@
 - `learn git`：学习本地或远程 Git 仓库
 - `learn web`：学习单页网页，或显式 `--crawl` 学习多页站点
 - `search`：`embedding + FTS + RRF` 混合检索
+- `get`：按文档路径或 `documentId` 读取整页 / 整文件
 - `ai-search`：LLM 多轮 query planning + 本地证据回答
 - `web search`：使用 Tavily 做公网搜索
 - `db scope / stats / doctor / rebuild / clear`
@@ -123,6 +124,7 @@ CLOUDFLARE_API_TOKEN=...
 ```bash
 nya learn git /path/to/repo
 nya search "vector search"
+nya get README.md
 nya ai-search "这个仓库的搜索机制是什么？"
 ```
 
@@ -252,6 +254,8 @@ nya search "vector search for agents" --json
   "query": "vector search for agents",
   "results": [
     {
+      "documentId": 12,
+      "sourceKey": "/path/to/repo",
       "path": "README.md",
       "section": "Search",
       "snippet": "Gemini embeddings and Tavily search help agents..."
@@ -259,6 +263,66 @@ nya search "vector search for agents" --json
   ]
 }
 ```
+
+说明：
+
+- `search --json` 现在会返回 `documentId` 和 `sourceKey`
+- agent 可以用 `documentId` 继续调用 `nya get --document-id <id>`
+- `section` 仍然表示命中的 chunk / 分段，不等于完整文档内容
+
+### 获取整页文档或完整代码文件
+
+按 path 获取：
+
+```bash
+nya get README.md
+nya get src/core/search/search-index.ts --project
+```
+
+按 `documentId` 获取：
+
+```bash
+nya get --document-id 12 --project
+```
+
+当同一路径在当前 scope 中存在多个 source 时，可加 `--source` 限定：
+
+```bash
+nya get README.md --source /path/to/repo --project
+```
+
+JSON 输出：
+
+```bash
+nya get README.md --project --json
+```
+
+典型结果：
+
+```json
+{
+  "scope": "project",
+  "databasePath": "/path/to/project/.nya-cli/index.sqlite",
+  "document": {
+    "documentId": 12,
+    "sourceKey": "/path/to/repo",
+    "sourceKind": "local_git",
+    "path": "README.md",
+    "language": "markdown",
+    "title": "README.md",
+    "contentHash": "sha256:...",
+    "content": "# Title\n\nFull document content..."
+  }
+}
+```
+
+说明：
+
+- `get` 返回的是**完整文档内容**，不是 snippet
+- 对 `learn git` 来说，返回完整文件文本
+- 对 `learn web` 来说，返回清洗后的完整 Markdown 页面
+- 返回内容来自当前知识库里的**已索引快照**；如果源文件后来变了，需要重新 `learn` 或 `db rebuild`
+- 如果 path 不唯一，命令会报错并提示改用 `--source` 或 `--document-id`
 
 ### LLM 驱动自然语言搜索
 

@@ -56,6 +56,8 @@ export async function runSearch(args: {
     ];
     for (const [index, item] of result.results.entries()) {
       lines.push(`[${index + 1}] ${item.path}`);
+      lines.push(`document_id: ${item.documentId}`);
+      lines.push(`source_key: ${item.sourceKey}`);
       lines.push(`section: ${item.section}`);
       lines.push(`score: ${item.score.toFixed(6)}`);
       lines.push(`snippet: ${item.snippet}`);

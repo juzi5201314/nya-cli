@@ -16,6 +16,8 @@ import {
 
 export type SearchResult = {
   chunkId: number;
+  documentId: number;
+  sourceKey: string;
   path: string;
   section: string;
   snippet: string;
@@ -122,6 +124,8 @@ export async function searchIndex(args: {
       return [
         {
           chunkId,
+          documentId: row.documentId,
+          sourceKey: row.sourceKey,
           path: row.path,
           section: row.section,
           snippet: makeSnippet(row.content, args.query),

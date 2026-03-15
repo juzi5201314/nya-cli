@@ -228,6 +228,7 @@ export async function learnWebSource(args: {
         language: page.language,
         title: page.title,
         contentHash: page.contentHash,
+        content: page.content,
       },
       chunks: chunks.map((chunk, index) => ({
         chunkIndex: index,

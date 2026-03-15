@@ -8,6 +8,7 @@ import {
   runDbScope,
   runDbStats,
 } from '../commands/db';
+import { runGet } from '../commands/get';
 import { runLearnGit, runLearnWeb } from '../commands/learn';
 import { runSearch } from '../commands/search';
 import { requireDbScope } from '../commands/shared';
@@ -97,6 +98,34 @@ export function createCli() {
           project: Boolean(options.project),
           asJson: Boolean(options.json),
           limit: Number.parseInt(options.limit ?? '8', 10),
+        });
+      }
+    );
+
+  cli
+    .command('get [path]', '获取整页文档或完整代码文件')
+    .option('--config <path>', '指定 nya.toml 路径')
+    .option('--json', '以 JSON 输出结果')
+    .option('--project', '使用当前项目作用域数据库')
+    .option('--document-id <number>', '按 document id 获取完整文档')
+    .option('--source <sourceKey>', '按 source key 限定 path 查找')
+    .action(
+      async (
+        path: string | undefined,
+        options: GlobalOptions & {
+          documentId?: string;
+          source?: string;
+        }
+      ) => {
+        await runGet({
+          path,
+          documentId: options.documentId
+            ? Number.parseInt(options.documentId, 10)
+            : undefined,
+          sourceKey: options.source,
+          configPath: options.config,
+          project: Boolean(options.project),
+          asJson: Boolean(options.json),
         });
       }
     );

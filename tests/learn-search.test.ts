@@ -280,6 +280,7 @@ describe('learn and search', () => {
             language: 'ts',
             title: 'search-index.ts',
             contentHash: 'doc-1',
+            content: 'Implements reciprocal rank fusion for local retrieval.',
           },
           chunks: [
             {
@@ -302,6 +303,8 @@ describe('learn and search', () => {
             language: 'ts',
             title: 'search.ts',
             contentHash: 'doc-2',
+            content:
+              'import { searchIndex } from "../core/search/search-index";',
           },
           chunks: [
             {
@@ -358,6 +361,7 @@ describe('learn and search', () => {
             language: 'ts',
             title: 'database.ts',
             contentHash: 'doc-3',
+            content: `${'prefix '.repeat(48)}embedding fingerprint changed requires rebuild before continuing.`,
           },
           chunks: [
             {
