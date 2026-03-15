@@ -67,4 +67,12 @@ export type WebIngestProvider = {
       fetchMode: WebFetchMode;
     }
   ): Promise<WebFetchedPage>;
+  crawl?(
+    url: string,
+    options: {
+      maxPages: number;
+      maxDepth: number;
+      fetchMode: WebFetchMode;
+    }
+  ): Promise<WebFetchedPage[]>;
 };

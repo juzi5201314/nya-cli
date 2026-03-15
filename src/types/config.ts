@@ -8,5 +8,4 @@ export type ScopeMode = 'global' | 'project';
 
 export type SearchOutputFormat = 'text' | 'json';
 
-export type WebFetchMode =
-  AppConfig['web']['ingest']['providers']['scrapling']['default_fetch_mode'];
+export type WebFetchMode = 'auto' | 'get' | 'fetch';

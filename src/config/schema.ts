@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const outputFormatSchema = z.enum(['text', 'json']);
 const webSearchProviderSchema = z.enum(['tavily']);
-const webIngestProviderSchema = z.enum(['scrapling']);
+const webIngestProviderSchema = z.enum(['scrapling', 'cloudflare']);
 const embeddingProviderSchema = z.enum(['google', 'openai']);
 const llmProviderSchema = z.enum(['google', 'openai']);
 const rerankProviderSchema = z.enum(['none']);
@@ -31,7 +31,8 @@ export const appConfigSchema = z.object({
     ingest: z.object({
       provider: webIngestProviderSchema.default('scrapling'),
       providers: z.object({
-        scrapling: z.object({
+        scrapling: z
+          .object({
           command: z.string().min(1).default('scrapling'),
           default_fetch_mode: webFetchModeSchema.default('auto'),
           default_crawl: z.boolean().default(false),
@@ -47,7 +48,30 @@ export const appConfigSchema = z.object({
             .max(300000)
             .default(30000),
           fetch_wait_ms: z.number().int().min(0).max(120000).default(0),
-        }),
+          })
+          .default({}),
+        cloudflare: z
+          .object({
+          account_id: z.string().default(''),
+          api_token_env: z.string().min(1).default('CLOUDFLARE_API_TOKEN'),
+          base_url: z
+            .string()
+            .url()
+            .default('https://api.cloudflare.com/client/v4'),
+          default_fetch_mode: webFetchModeSchema.default('auto'),
+          default_crawl: z.boolean().default(false),
+          default_max_pages: z.number().int().min(1).max(100000).default(25),
+          default_max_depth: z.number().int().min(0).max(100000).default(2),
+          min_markdown_chars: z.number().int().min(1).default(200),
+          poll_interval_ms: z.number().int().min(250).max(30000).default(5000),
+          max_poll_attempts: z.number().int().min(1).max(1000).default(60),
+          source: z.enum(['all', 'sitemaps', 'links']).default('all'),
+          include_external_links: z.boolean().default(false),
+          include_subdomains: z.boolean().default(false),
+          include_patterns: z.array(z.string().min(1)).default([]),
+          exclude_patterns: z.array(z.string().min(1)).default([]),
+          })
+          .default({}),
       }),
     }),
   }),
