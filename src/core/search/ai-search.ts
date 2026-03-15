@@ -29,6 +29,8 @@ export type AiSearchResponse = {
   iterations: number;
   citations: Array<{
     evidenceId: number;
+    documentId: number;
+    sourceKey: string;
     path: string;
     section: string;
     snippet: string;
@@ -37,6 +39,8 @@ export type AiSearchResponse = {
   }>;
   evidence: Array<{
     evidenceId: number;
+    documentId: number;
+    sourceKey: string;
     path: string;
     section: string;
     snippet: string;
@@ -277,6 +281,8 @@ export async function aiSearchIndex(args: {
     iterations,
     citations: citations.map((item) => ({
       evidenceId: item.evidenceId,
+      documentId: item.documentId,
+      sourceKey: item.sourceKey,
       path: item.path,
       section: item.section,
       snippet: item.snippet,
@@ -285,6 +291,8 @@ export async function aiSearchIndex(args: {
     })),
     evidence: rankedEvidence.map((item) => ({
       evidenceId: item.evidenceId,
+      documentId: item.documentId,
+      sourceKey: item.sourceKey,
       path: item.path,
       section: item.section,
       snippet: item.snippet,

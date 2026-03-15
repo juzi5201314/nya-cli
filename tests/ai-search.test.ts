@@ -284,6 +284,9 @@ describe('ai-search', () => {
     expect(result.usedQueries.length).toBeGreaterThan(0);
     expect(result.answer).toContain('Gemini');
     expect(result.citations.length).toBeGreaterThan(0);
+    expect(result.citations[0]?.documentId).toBeGreaterThan(0);
+    expect(result.citations[0]?.sourceKey).toBe(repoDir);
+    expect(result.evidence[0]?.documentId).toBeGreaterThan(0);
     closeDatabase(db);
   });
 });

@@ -256,6 +256,92 @@ describe('learn and search', () => {
     closeDatabase(db);
   });
 
+  test('skips binary files and common ignored paths during git ingest', async () => {
+    const repoDir = join(tempRoot, 'repo');
+    const dbDir = join(tempRoot, 'db');
+    await mkdir(join(repoDir, 'node_modules/pkg'), { recursive: true });
+    await mkdir(join(repoDir, 'dist'), { recursive: true });
+
+    await writeFile(
+      join(repoDir, 'README.md'),
+      '# Intro\n\nOnly this file should be indexed.\n'
+    );
+    await writeFile(
+      join(repoDir, 'node_modules/pkg/index.js'),
+      'export const ignored = "node_modules should be skipped";\n'
+    );
+    await writeFile(
+      join(repoDir, 'dist/app.js'),
+      'export const bundle = "dist output should be skipped";\n'
+    );
+    await writeFile(
+      join(repoDir, 'package-lock.json'),
+      '{"name":"fixture","lockfileVersion":3}\n'
+    );
+    await writeFile(
+      join(repoDir, 'binary.dat'),
+      new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x80, 0x81, 0x82, 0x83])
+    );
+
+    await runGit(repoDir, ['init']);
+    await runGit(repoDir, ['add', '.']);
+
+    const db = await openDatabase(join(dbDir, 'index.sqlite'));
+    const provider = new FakeEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      provider.fingerprint(baseConfig.index.chunking_version)
+    );
+
+    const learnResult = await learnGitSource({
+      source: repoDir,
+      config: baseConfig,
+      db,
+      scope: 'project',
+      scopePaths: {
+        scope: 'project',
+        projectDirName: '.nya-cli',
+        databasePath: join(dbDir, 'index.sqlite'),
+        databaseDir: dbDir,
+        remoteCacheDir: join(tempRoot, 'cache'),
+      },
+      embeddingProvider: provider,
+      rebuildTriggered: false,
+      rebuildReason: null,
+    });
+
+    const readmeResult = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'indexed file',
+      limit: 5,
+      scope: 'project',
+      databasePath: join(dbDir, 'index.sqlite'),
+    });
+    const ignoredResult = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'node_modules ignored bundle skipped',
+      limit: 5,
+      scope: 'project',
+      databasePath: join(dbDir, 'index.sqlite'),
+    });
+
+    expect(learnResult.documentsIndexed).toBe(1);
+    expect(readmeResult.results[0]?.path).toBe('README.md');
+    expect(
+      ignoredResult.results.some(
+        (item) =>
+          item.path.includes('node_modules') ||
+          item.path.includes('dist/') ||
+          item.path === 'binary.dat' ||
+          item.path === 'package-lock.json'
+      )
+    ).toBe(false);
+
+    closeDatabase(db);
+  });
+
   test('prefers path and section matches for code identifier queries', async () => {
     const dbDir = join(tempRoot, 'db');
     const dbPath = join(dbDir, 'index.sqlite');

@@ -29,18 +29,48 @@ const BINARY_EXTENSIONS = new Set([
   '.dylib',
   '.exe',
   '.bin',
+  '.class',
+  '.jar',
+  '.wasm',
+  '.sqlite',
+  '.db',
   '.lock',
 ]);
 
-const SKIP_PATH_PATTERNS = [
-  '/node_modules/',
-  '/dist/',
-  '/build/',
-  '/coverage/',
-  '/.git/',
-  '/vendor/',
-  '/target/',
-];
+const SKIP_DIRECTORY_NAMES = new Set([
+  '.git',
+  '.hg',
+  '.svn',
+  '.idea',
+  '.vscode',
+  '.next',
+  '.nuxt',
+  '.parcel-cache',
+  '.svelte-kit',
+  '.turbo',
+  '.cache',
+  '.venv',
+  'venv',
+  '__pycache__',
+  'node_modules',
+  'dist',
+  'build',
+  'coverage',
+  'vendor',
+  'target',
+  'out',
+  'tmp',
+  'temp',
+]);
+
+const SKIP_FILE_NAMES = new Set([
+  '.ds_store',
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'bun.lock',
+  'bun.lockb',
+]);
 
 export type ResolvedGitSource =
   | {
@@ -143,12 +173,53 @@ function detectLanguage(filePath: string): string {
 }
 
 function shouldSkipFile(relativePath: string, ext: string): boolean {
-  const normalized = `/${relativePath.replaceAll('\\', '/')}`;
+  const normalized = relativePath.replaceAll('\\', '/');
   if (BINARY_EXTENSIONS.has(ext)) {
     return true;
   }
 
-  return SKIP_PATH_PATTERNS.some((pattern) => normalized.includes(pattern));
+  const segments = normalized
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  const fileName = segments.at(-1)?.toLowerCase() ?? '';
+
+  if (SKIP_FILE_NAMES.has(fileName)) {
+    return true;
+  }
+
+  return segments.some((segment) =>
+    SKIP_DIRECTORY_NAMES.has(segment.toLowerCase())
+  );
+}
+
+function isBinaryContent(bytes: Uint8Array): boolean {
+  if (bytes.length === 0) {
+    return false;
+  }
+
+  const sample = bytes.slice(0, Math.min(bytes.length, 8192));
+  if (sample.includes(0)) {
+    return true;
+  }
+
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(sample);
+  } catch {
+    return true;
+  }
+
+  let suspiciousBytes = 0;
+  for (const byte of sample) {
+    const isAllowedControl =
+      byte === 9 || byte === 10 || byte === 12 || byte === 13 || byte === 27;
+    const isControl = (byte >= 0 && byte < 32) || byte === 127;
+    if (isControl && !isAllowedControl) {
+      suspiciousBytes += 1;
+    }
+  }
+
+  return suspiciousBytes / sample.length > 0.1;
 }
 
 export async function resolveGitSource(args: {
@@ -209,7 +280,7 @@ export async function readRepositoryFiles(args: {
 
     const file = Bun.file(absolutePath);
     const bytes = await file.bytes();
-    if (bytes.includes(0)) {
+    if (isBinaryContent(bytes)) {
       continue;
     }
 

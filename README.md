@@ -194,6 +194,13 @@ nya learn git https://github.com/owner/repo.git --project
 }
 ```
 
+默认过滤规则：
+
+- 跳过常见无价值目录：`node_modules`、`dist`、`build`、`coverage`、`target`、`.next` 等
+- 跳过常见 lock / 缓存文件：如 `package-lock.json`、`pnpm-lock.yaml`、`yarn.lock`、`bun.lock*`
+- 跳过**所有二进制文件**，不进入 embedding
+- `max_file_bytes` 只用于限制仍然被视为文本文件的最大体积，不用于替代二进制检测
+
 ### 学习网页
 
 学习单个页面：
@@ -359,12 +366,46 @@ nya ai-search "你的问题" \
   "citations": [
     {
       "evidenceId": 1,
+      "documentId": 12,
+      "sourceKey": "/path/to/repo",
       "path": "README.md",
       "section": "AI Search Fixture"
     }
   ]
 }
 ```
+
+说明：
+
+- `ai-search` 的 `citations` 现在直接包含 `documentId`
+- agent 可以据此继续调用 `nya get --document-id <id>`
+
+### Agent 工作流：`ai-search` → `get`
+
+如果 agent 先要答案，再要完整上下文，推荐固定走这条链路：
+
+1. 先执行 `ai-search` 拿到 grounded answer 和 `citations`
+2. 从 `citations[].documentId` 里挑出需要继续展开的文档
+3. 再执行 `get --document-id <id>` 读取完整文档
+
+示例：
+
+```bash
+nya ai-search "embedding fingerprint 变化后系统会怎么处理？" --project --json
+nya get --document-id 12 --project --json
+```
+
+适用场景：
+
+- 先让 agent 快速得到带证据的回答
+- 再按需展开某一篇完整文档 / 完整代码文件
+- 避免一开始就把大量全文塞进上下文窗口
+
+说明：
+
+- `documentId` 是当前 scope 数据库内的稳定标识
+- `get` 返回的是知识库中的已索引快照，不是实时读取工作区文件
+- 如果源内容已经变化，请重新执行 `learn` 或 `db rebuild`
 
 ### 公网搜索
 

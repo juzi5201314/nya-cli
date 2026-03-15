@@ -63,7 +63,7 @@ export async function runAiSearch(args: {
     lines.push(`citations: ${result.citations.length}`);
     for (const citation of result.citations) {
       lines.push(
-        `[${citation.evidenceId}] ${citation.path} :: ${citation.section}`
+        `[${citation.evidenceId}] doc=${citation.documentId} ${citation.path} :: ${citation.section}`
       );
     }
 
