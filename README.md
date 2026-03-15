@@ -1,38 +1,47 @@
 # nya-cli
 
-面向 agent 的知识库 CLI。
+面向 agent 的本地知识库 CLI。
 
-`nya-cli` 现在提供两条搜索路径：
+它解决两件事：
 
-- `search`：本地知识库混合检索，走 `embedding + FTS + RRF`
-- `ai-search`：LLM 驱动的自然语言搜索，只搜索本地知识库
+1. 把 Git 仓库或网页内容学习进本地知识库
+2. 让 agent 以检索或自然语言问答的方式使用这些知识
 
-同时支持两类学习入口：
+当前提供两条搜索路径：
+
+- `search`：本地混合检索，适合拿原始命中结果
+- `ai-search`：LLM 驱动的自然语言搜索，适合直接拿 grounded answer
+
+## 适用场景
+
+`nya-cli` 适合这些场景：
+
+- 给 coding agent 提供项目代码知识库
+- 给 research agent 提供文档站知识库
+- 把公网网页或 docs 页面转成本地可检索知识
+- 在全局知识库和项目知识库之间切换使用
+
+## 核心能力
+
+当前已实现：
 
 - `learn git`：学习本地或远程 Git 仓库
-- `learn web`：学习单个网页，或显式 `--crawl` 学习多页站点
+- `learn web`：学习单页网页，或显式 `--crawl` 学习多页站点
+- `search`：`embedding + FTS + RRF` 混合检索
+- `ai-search`：LLM 多轮 query planning + 本地证据回答
+- `web search`：使用 Tavily 做公网搜索
+- `db scope / stats / doctor / rebuild / clear`
 
-## 介绍
+当前 provider：
 
-项目目标是给 agent 提供一个可本地运行、可重建、可多供应商扩展的知识库工具。
+- Embedding：`Google`、`OpenAI`
+- LLM：`Google`、`OpenAI`
+- Web Search：`Tavily`
+- Web Ingest：`Scrapling`
 
-当前核心能力：
+## 快速开始
 
-- 本地存储：`SQLite + sqlite-vec + FTS5`
-- Embedding provider：`Google`、`OpenAI`
-- LLM provider：`Google`、`OpenAI`
-- Web search provider：`Tavily`
-- Web ingest provider：`Scrapling`
-
-当前作用域模型：
-
-- 默认写入 **全局数据库**
-- 使用 `--project` 写入 **当前项目数据库**，路径是 `./.nya-cli/index.sqlite`
-- 远程 Git 缓存始终在全局 cache 目录，不跟随 `--project`
-
-## 安装
-
-### 运行前提
+### 1. 安装前提
 
 需要这些基础依赖：
 
@@ -42,33 +51,29 @@
 
 如果你要使用 `learn web` 的动态抓取模式，`scrapling fetch` 还依赖它自己的浏览器环境。
 
-### 安装项目依赖
+### 2. 安装依赖
 
 ```bash
 bun install
 ```
 
-### 安装 Scrapling
+### 3. 安装 Scrapling
 
-如果你的机器还没有 `scrapling`：
+如果机器上还没有 `scrapling`：
 
 ```bash
 uv tool install scrapling
 ```
 
-安装后可以确认：
+确认可执行：
 
 ```bash
 scrapling --help
 ```
 
-## 配置
+### 4. 配置密钥
 
-### `.env`
-
-项目根目录可以放 `.env`，CLI 启动时会自动加载。
-
-至少建议填写：
+项目根目录使用 `.env`：
 
 ```env
 GOOGLE_GENERATIVE_AI_API_KEY=...
@@ -78,12 +83,13 @@ OPENAI_API_KEY=...
 
 说明：
 
+- `.env` 会在 CLI 启动时自动加载
 - 已存在于系统环境里的同名变量不会被 `.env` 覆盖
-- 如果不用某个 provider，可以不填对应 key
+- 不使用某个 provider 时，可以不填对应 key
 
-### `nya.toml`
+### 5. 检查配置文件
 
-项目配置文件名固定为 `nya.toml`。
+主配置文件是 [nya.toml](/home/soeur/project/nya-cli/nya.toml)。
 
 当前配置分层：
 
@@ -94,7 +100,38 @@ OPENAI_API_KEY=...
 - `[ai_search]`
 - `[index]`
 
-默认示例见 [nya.toml](/home/soeur/project/nya-cli/nya.toml)。
+### 6. 先试一条最短链路
+
+```bash
+nya learn git /path/to/repo
+nya search "vector search"
+nya ai-search "这个仓库的搜索机制是什么？"
+```
+
+## 存储作用域
+
+`nya-cli` 有两种数据库作用域：
+
+- **全局数据库**
+- **项目数据库**
+
+默认行为：
+
+- `learn` / `search` / `ai-search` 默认使用 **全局数据库**
+- 传 `--project` 时使用当前目录下的 `./.nya-cli/index.sqlite`
+
+示例：
+
+```bash
+nya learn git /path/to/repo
+nya learn git /path/to/repo --project
+```
+
+说明：
+
+- 全局数据库用于跨项目复用知识
+- 项目数据库用于隔离当前仓库上下文
+- 远程 Git 缓存始终是**全局缓存**，不跟随 `--project`
 
 ## CLI 用法
 
@@ -112,10 +149,23 @@ nya learn git /path/to/repo
 nya learn git https://github.com/owner/repo.git
 ```
 
-写入当前项目数据库：
+写入项目数据库：
 
 ```bash
 nya learn git https://github.com/owner/repo.git --project
+```
+
+典型 JSON 输出：
+
+```json
+{
+  "source": "https://github.com/owner/repo.git",
+  "sourceKind": "remote_git",
+  "scope": "global",
+  "documentsIndexed": 42,
+  "chunksIndexed": 215,
+  "rebuildTriggered": false
+}
 ```
 
 ### 学习网页
@@ -126,7 +176,7 @@ nya learn git https://github.com/owner/repo.git --project
 nya learn web https://example.com/docs
 ```
 
-显式启用多页 crawl：
+学习多页站点：
 
 ```bash
 nya learn web https://example.com/docs --crawl --max-pages 20 --max-depth 2
@@ -137,6 +187,19 @@ nya learn web https://example.com/docs --crawl --max-pages 20 --max-depth 2
 - `--fetch-mode auto`：默认，先 `get`，必要时回退到 `fetch`
 - `--fetch-mode get`
 - `--fetch-mode fetch`
+
+典型 JSON 输出：
+
+```json
+{
+  "source": "https://example.com/docs",
+  "sourceKind": "web",
+  "scope": "global",
+  "documentsIndexed": 8,
+  "chunksIndexed": 31,
+  "crawledPages": 8
+}
+```
 
 ### 本地混合检索
 
@@ -150,6 +213,21 @@ JSON 输出：
 nya search "vector search for agents" --json
 ```
 
+典型结果：
+
+```json
+{
+  "query": "vector search for agents",
+  "results": [
+    {
+      "path": "README.md",
+      "section": "Search",
+      "snippet": "Gemini embeddings and Tavily search help agents..."
+    }
+  ]
+}
+```
+
 ### LLM 驱动自然语言搜索
 
 ```bash
@@ -159,20 +237,50 @@ nya ai-search "Gemini 和 Tavily 在本地知识库里如何帮助 agent 搜索�
 可调参数：
 
 ```bash
-nya ai-search "你的问题" --max-steps 3 --max-queries 3 --max-evidence 12 --limit 8
+nya ai-search "你的问题" \
+  --max-steps 3 \
+  --max-queries 3 \
+  --max-evidence 12 \
+  --limit 8
 ```
 
 说明：
 
-- `ai-search` 只搜索本地知识库
-- 不混入 Tavily 公网搜索结果
-- 它会多轮规划 query，然后调用现有 `search` 内核取证据，最后输出带引用的答案
+- `ai-search` 只搜索**本地知识库**
+- 不会主动混入 Tavily 公网搜索结果
+- 内部会多轮规划 query，再调用现有 `search` 内核取证据，最后输出带引用的答案
+
+典型 JSON 输出：
+
+```json
+{
+  "query": "Gemini 和 Tavily 在本地知识库里如何帮助 agent 搜索？",
+  "answer": "Gemini embeddings and Tavily search help agents answer questions from the local knowledge base.",
+  "usedQueries": [
+    "Gemini local knowledge base search agent",
+    "Tavily local knowledge base search agent"
+  ],
+  "citations": [
+    {
+      "evidenceId": 1,
+      "path": "README.md",
+      "section": "AI Search Fixture"
+    }
+  ]
+}
+```
 
 ### 公网搜索
 
 ```bash
 nya web search "Tavily Gemini embeddings"
 ```
+
+说明：
+
+- `web search` 只做公网搜索
+- 不会写入本地知识库
+- 如果你要把网页内容写入知识库，请使用 `learn web`
 
 ## 数据库命令
 
@@ -183,7 +291,7 @@ nya web search "Tavily Gemini embeddings"
 
 两者必须二选一。
 
-### 查看数据库统计
+### 查看统计
 
 ```bash
 nya db stats --global
@@ -196,6 +304,13 @@ nya db stats --project --json
 nya db scope --global
 nya db scope --project --json
 ```
+
+`db scope` 现在会展示：
+
+- 数据库路径
+- 全局远程缓存路径
+- source 列表
+- 每个 source 的最近一次 rebuild 状态
 
 ### 重建数据库
 
@@ -217,18 +332,18 @@ nya db rebuild --global --source <sourceKey>
 nya db rebuild --global --failed-only
 ```
 
-控制重试策略：
+控制失败策略：
 
 ```bash
 nya db rebuild --global --retry 2
 nya db rebuild --global --retry 2 --fail-fast
 ```
 
-行为说明：
+当前行为：
 
 - 默认每个 source 最多尝试 `1 + retry` 次
-- 失败 source 会被记录到 manifest 中
-- 如果有失败 source，命令最终返回非零退出码
+- 失败 source 会被持久化记录到 `source_manifests`
+- 如果最终还有失败 source，命令返回非零退出码
 - `--failed-only` 只会处理 `lastRebuildStatus = "failed"` 的 source
 
 ### 清空数据库
@@ -247,7 +362,7 @@ nya db clear --project --yes
 
 ### `search`
 
-当前 `search` 不是 LLM 搜索。
+当前 `search` **不是** LLM 搜索。
 
 它是本地混合检索：
 
@@ -257,6 +372,12 @@ nya db clear --project --yes
 - 必要时 LIKE fallback
 - RRF 融合
 
+适合：
+
+- 想拿到原始命中 chunk
+- 想自己控制后续处理
+- 想要更可解释、可预期的检索行为
+
 ### `ai-search`
 
 当前 `ai-search` 是有边界的 LLM 驱动搜索：
@@ -265,7 +386,169 @@ nya db clear --project --yes
 - 每轮复用本地 `search`
 - 最后生成 grounded answer 和 citations
 
-它不会主动调用公网搜索。
+适合：
+
+- 直接问自然语言问题
+- 需要带证据引用的回答
+- 希望 agent 先自己规划检索再回答
+
+## 故障排查
+
+### 1. `scrapling` 不存在
+
+典型报错：
+
+```text
+未检测到可用的 scrapling CLI。请先安装 Scrapling CLI。
+```
+
+处理方式：
+
+```bash
+uv tool install scrapling
+scrapling --help
+```
+
+### 2. `scrapling fetch` 找不到浏览器
+
+典型报错会包含：
+
+```text
+Playwright ... Executable doesn't exist ...
+playwright install
+```
+
+原因：
+
+- `scrapling fetch` 依赖 Playwright 浏览器二进制
+- 你安装了 Scrapling，但还没有把浏览器装好
+
+处理方式：
+
+先安装 Playwright 浏览器依赖，再重试 `learn web --fetch-mode fetch`。
+
+如果当前页面用 `get` 就够用，也可以先继续使用：
+
+```bash
+nya learn web https://example.com/docs --fetch-mode get
+```
+
+### 3. `learn web --fetch-mode auto` 回退到 `fetch`
+
+`auto` 模式下会先尝试 `get`。
+
+如果出现这些情况，会回退到 `fetch`：
+
+- 请求失败
+- 正文抽取失败
+- 正文过短
+
+如果你不想触发浏览器抓取，可以显式指定：
+
+```bash
+nya learn web https://example.com/docs --fetch-mode get
+```
+
+### 4. `db` 子命令报作用域错误
+
+典型报错：
+
+```text
+db 子命令必须显式指定且只能指定一个作用域：--global 或 --project
+```
+
+处理方式：
+
+必须显式传其中一个：
+
+```bash
+nya db stats --global
+nya db scope --project
+```
+
+### 5. `db rebuild --failed-only` 没有任何动作
+
+原因通常是：
+
+- 当前没有失败状态的 source
+- 你已经把失败 source 修复并成功重建过了
+
+先看状态：
+
+```bash
+nya db scope --global --json
+```
+
+关注：
+
+- `failedSourceManifests`
+- 每个 manifest 的 `lastRebuildStatus`
+
+### 6. `db rebuild --source ...` 拒绝执行
+
+如果当前 embedding fingerprint 变了，并且库里有多个 source，系统会拒绝只重建单个 source。
+
+原因：
+
+- 避免新旧向量空间混用
+
+处理方式：
+
+先重建整个 scope：
+
+```bash
+nya db rebuild --global
+```
+
+### 7. `db rebuild` 结束但退出码非零
+
+这说明：
+
+- 至少有一个 source 最终失败
+- 命令虽然继续处理了其他 source，但整体不算完全成功
+
+处理方式：
+
+先查看失败列表：
+
+```bash
+nya db rebuild --global --json
+```
+
+然后只重试失败项：
+
+```bash
+nya db rebuild --global --failed-only
+```
+
+### 8. `ai-search` 比 `search` 慢很多
+
+这是预期行为。
+
+原因：
+
+- `ai-search` 不是单次检索
+- 它要跑多轮 LLM planning + retrieval + answer synthesis
+
+如果你更看重速度或原始命中结果，优先用：
+
+```bash
+nya search "your query"
+```
+
+### 9. `ai-search` 没有命中公网信息
+
+这是预期行为。
+
+`ai-search` 当前只搜索本地知识库，不会主动去调 Tavily。
+
+如果你需要公网搜索：
+
+```bash
+nya web search "your query"
+```
+
+或者先把网页 learn 进本地库，再跑 `ai-search`。
 
 ## 开发
 
@@ -283,7 +566,7 @@ bunx biome check .
 bun run build
 ```
 
-产物默认输出到：
+构建产物默认输出到：
 
 ```text
 dist/nya
