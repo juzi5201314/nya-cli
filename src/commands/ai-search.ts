@@ -1,5 +1,44 @@
+import type { AiSearchResponse } from '../core/search/ai-search';
 import { aiSearchIndex } from '../core/search/ai-search';
 import { closeDatabase, loadOperationRuntime, printOutput } from './shared';
+
+function formatGetCommand(
+  documentId: number,
+  scope: 'global' | 'project'
+): string {
+  return scope === 'project'
+    ? `nya get --document-id ${documentId} --project`
+    : `nya get --document-id ${documentId}`;
+}
+
+export function renderAiSearchText(result: AiSearchResponse): string {
+  const lines = [
+    `query: ${result.query}`,
+    `scope: ${result.scope}`,
+    `database: ${result.databasePath}`,
+    `iterations: ${result.iterations}`,
+    '',
+    'answer:',
+    result.answer,
+    '',
+    `used_queries: ${result.usedQueries.length}`,
+  ];
+
+  for (const query of result.usedQueries) {
+    lines.push(`- ${query}`);
+  }
+
+  lines.push('');
+  lines.push(`citations: ${result.citations.length}`);
+  for (const citation of result.citations) {
+    lines.push(
+      `[${citation.evidenceId}] doc=${citation.documentId} ${citation.path} :: ${citation.section}`
+    );
+    lines.push(`get: ${formatGetCommand(citation.documentId, result.scope)}`);
+  }
+
+  return lines.join('\n');
+}
 
 export async function runAiSearch(args: {
   query: string;
@@ -43,31 +82,7 @@ export async function runAiSearch(args: {
       return;
     }
 
-    const lines = [
-      `query: ${result.query}`,
-      `scope: ${result.scope}`,
-      `database: ${result.databasePath}`,
-      `iterations: ${result.iterations}`,
-      '',
-      'answer:',
-      result.answer,
-      '',
-      `used_queries: ${result.usedQueries.length}`,
-    ];
-
-    for (const query of result.usedQueries) {
-      lines.push(`- ${query}`);
-    }
-
-    lines.push('');
-    lines.push(`citations: ${result.citations.length}`);
-    for (const citation of result.citations) {
-      lines.push(
-        `[${citation.evidenceId}] doc=${citation.documentId} ${citation.path} :: ${citation.section}`
-      );
-    }
-
-    printOutput(lines.join('\n'), false);
+    printOutput(renderAiSearchText(result), false);
   } finally {
     closeDatabase(runtime.db);
   }

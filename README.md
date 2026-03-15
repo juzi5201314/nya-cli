@@ -379,6 +379,7 @@ nya ai-search "你的问题" \
 
 - `ai-search` 的 `citations` 现在直接包含 `documentId`
 - agent 可以据此继续调用 `nya get --document-id <id>`
+- 非 JSON 文本输出会直接附带可执行提示：`nya get --document-id <id> [--project]`
 
 ### Agent 工作流：`ai-search` → `get`
 

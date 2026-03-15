@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { renderAiSearchText } from '../src/commands/ai-search';
 import { learnGitSource } from '../src/core/ingest/learn-git';
 import { aiSearchIndex } from '../src/core/search/ai-search';
 import {
@@ -224,6 +225,44 @@ beforeEach(async () => {
 });
 
 describe('ai-search', () => {
+  test('renders executable get commands for citations', () => {
+    const rendered = renderAiSearchText({
+      query: 'question',
+      scope: 'project',
+      databasePath: '/tmp/index.sqlite',
+      answer: 'answer',
+      usedQueries: ['query a'],
+      iterations: 1,
+      citations: [
+        {
+          evidenceId: 1,
+          documentId: 12,
+          sourceKey: '/repo',
+          path: 'README.md',
+          section: 'Intro',
+          snippet: 'snippet',
+          score: 0.9,
+          sourceKind: 'local_git',
+        },
+      ],
+      evidence: [
+        {
+          evidenceId: 1,
+          documentId: 12,
+          sourceKey: '/repo',
+          path: 'README.md',
+          section: 'Intro',
+          snippet: 'snippet',
+          score: 0.9,
+          sourceKind: 'local_git',
+        },
+      ],
+    });
+
+    expect(rendered).toContain('[1] doc=12 README.md :: Intro');
+    expect(rendered).toContain('get: nya get --document-id 12 --project');
+  });
+
   test('uses multi-query retrieval and returns grounded citations', async () => {
     const repoDir = join(tempRoot, 'repo');
     const dbDir = join(tempRoot, 'db');
