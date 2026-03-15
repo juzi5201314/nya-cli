@@ -79,6 +79,7 @@ scrapling --help
 GOOGLE_GENERATIVE_AI_API_KEY=...
 TAVILY_API_KEY=...
 OPENAI_API_KEY=...
+CLOUDFLARE_API_TOKEN=...
 ```
 
 说明：
@@ -99,6 +100,11 @@ OPENAI_API_KEY=...
 - `[llm]`
 - `[ai_search]`
 - `[index]`
+
+说明：
+
+- `web.ingest.provider` 支持 `scrapling`（本机抓取）与 `cloudflare`（Cloudflare Browser Rendering `/crawl`）。
+- 使用 `cloudflare` 时，需要在 `nya.toml` 中配置 `[web.ingest.providers.cloudflare].account_id`，并在环境变量中提供 `CLOUDFLARE_API_TOKEN`。
 
 ### 6. 先试一条最短链路
 

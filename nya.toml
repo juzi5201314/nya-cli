@@ -25,6 +25,23 @@ get_timeout_seconds = 30
 fetch_timeout_ms = 30000
 fetch_wait_ms = 0
 
+[web.ingest.providers.cloudflare]
+account_id = ""
+api_token_env = "CLOUDFLARE_API_TOKEN"
+base_url = "https://api.cloudflare.com/client/v4"
+default_fetch_mode = "auto"
+default_crawl = false
+default_max_pages = 25
+default_max_depth = 2
+min_markdown_chars = 200
+poll_interval_ms = 5000
+max_poll_attempts = 60
+source = "all"
+include_external_links = false
+include_subdomains = false
+include_patterns = []
+exclude_patterns = []
+
 [embedding]
 provider = "google"
 model = "gemini-embedding-001"
