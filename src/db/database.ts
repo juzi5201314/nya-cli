@@ -5,6 +5,7 @@ import { dirname } from 'node:path';
 import * as sqliteVec from 'sqlite-vec';
 
 import type { EmbeddingFingerprint } from '../providers/types';
+import { extractSearchTerms } from '../utils/text';
 
 const SCHEMA_VERSION = '3';
 
@@ -745,7 +746,7 @@ export function searchVector(
 }
 
 function buildFtsQuery(query: string): string | null {
-  const tokens = query.match(/[A-Za-z0-9_./-]+/g) ?? [];
+  const tokens = extractSearchTerms(query);
   if (tokens.length === 0) {
     return null;
   }
@@ -797,7 +798,7 @@ export function searchLike(
     return [];
   }
 
-  const tokens = query.match(/[A-Za-z0-9_./-]+/g) ?? [];
+  const tokens = extractSearchTerms(query);
   if (tokens.length === 0) {
     return [];
   }
@@ -823,6 +824,42 @@ export function searchLike(
     chunkId: Number(row.chunkId),
     rank: index + 1,
   }));
+}
+
+export function searchMetadataLike(
+  db: Database,
+  query: string,
+  limit: number
+): number[] {
+  if (!tableExists(db, 'chunks') || !tableExists(db, 'documents')) {
+    return [];
+  }
+
+  const tokens = extractSearchTerms(query);
+  if (tokens.length === 0) {
+    return [];
+  }
+
+  const placeholders = tokens
+    .map(
+      (_, index) =>
+        `(LOWER(documents.path) LIKE ?${index + 1} OR LOWER(chunks.section) LIKE ?${index + 1})`
+    )
+    .join(' OR ');
+
+  const statement = db.query<{ chunkId: number }, string[]>(
+    `
+      SELECT chunks.id AS chunkId
+      FROM chunks
+      JOIN documents ON documents.id = chunks.document_id
+      WHERE ${placeholders}
+      ORDER BY chunks.id
+      LIMIT ${limit}
+    `
+  );
+  const rows = statement.all(...tokens.map((token) => `%${token}%`));
+
+  return rows.map((row) => Number(row.chunkId));
 }
 
 export function getSearchHits(

@@ -3,11 +3,16 @@ import {
   getSearchHits,
   searchFts,
   searchLike,
+  searchMetadataLike,
   searchVector,
 } from '../../db/database';
 import type { EmbeddingProvider } from '../../providers/types';
 import type { ScopeMode } from '../../types/config';
-import { makeSnippet } from '../../utils/text';
+import {
+  compactSearchText,
+  extractSearchTerms,
+  makeSnippet,
+} from '../../utils/text';
 
 export type SearchResult = {
   chunkId: number;
@@ -31,6 +36,42 @@ function reciprocalRank(rank: number): number {
   return 1 / (RRF_K + rank);
 }
 
+function computeCoverage(text: string, terms: string[]): number {
+  if (terms.length === 0) {
+    return 0;
+  }
+
+  const compact = compactSearchText(text);
+  const matched = terms.filter((term) => compact.includes(term)).length;
+  return matched / terms.length;
+}
+
+function computeQueryAwareBoost(
+  row: { path: string; section: string; content: string },
+  query: string
+): number {
+  const compactQuery = compactSearchText(query);
+  const terms = extractSearchTerms(query);
+  const metadataText = `${row.path} ${row.section}`;
+  const compactMetadata = compactSearchText(metadataText);
+  const compactContent = compactSearchText(row.content);
+
+  let boost = 0;
+
+  if (compactQuery.length >= 2) {
+    if (compactMetadata.includes(compactQuery)) {
+      boost += 0.03;
+    } else if (compactContent.includes(compactQuery)) {
+      boost += 0.012;
+    }
+  }
+
+  boost += computeCoverage(metadataText, terms) * 0.02;
+  boost += computeCoverage(row.content, terms) * 0.008;
+
+  return boost;
+}
+
 export async function searchIndex(args: {
   db: Database;
   embeddingProvider: EmbeddingProvider;
@@ -39,11 +80,13 @@ export async function searchIndex(args: {
   scope: ScopeMode;
   databasePath: string;
 }): Promise<SearchResponse> {
+  const candidateLimit = Math.max(args.limit * 3, args.limit + 8);
   const queryEmbedding = await args.embeddingProvider.embedQuery(args.query);
-  const vectorHits = searchVector(args.db, queryEmbedding, args.limit);
-  const ftsHits = searchFts(args.db, args.query, args.limit);
+  const vectorHits = searchVector(args.db, queryEmbedding, candidateLimit);
+  const ftsHits = searchFts(args.db, args.query, candidateLimit);
   const lexicalHits =
-    ftsHits.length > 0 ? [] : searchLike(args.db, args.query, args.limit);
+    ftsHits.length > 0 ? [] : searchLike(args.db, args.query, candidateLimit);
+  const metadataHits = searchMetadataLike(args.db, args.query, candidateLimit);
 
   const scores = new Map<number, number>();
   for (const hit of vectorHits) {
@@ -65,32 +108,32 @@ export async function searchIndex(args: {
     );
   }
 
-  const rankedIds = [...scores.entries()]
-    .sort((left, right) => right[1] - left[1])
-    .slice(0, args.limit);
+  const candidateIds = [...new Set([...scores.keys(), ...metadataHits])];
 
-  const rows = getSearchHits(
-    args.db,
-    rankedIds.map(([chunkId]) => chunkId)
-  );
+  const rows = getSearchHits(args.db, candidateIds);
   const rowMap = new Map(rows.map((row) => [row.id, row]));
 
-  const results = rankedIds.flatMap(([chunkId, score]) => {
-    const row = rowMap.get(chunkId);
-    if (!row) {
-      return [];
-    }
-    return [
-      {
-        chunkId,
-        path: row.path,
-        section: row.section,
-        snippet: makeSnippet(row.content),
-        score,
-        sourceKind: row.sourceKind,
-      },
-    ];
-  });
+  const results = candidateIds
+    .flatMap((chunkId) => {
+      const row = rowMap.get(chunkId);
+      if (!row) {
+        return [];
+      }
+      return [
+        {
+          chunkId,
+          path: row.path,
+          section: row.section,
+          snippet: makeSnippet(row.content, args.query),
+          score:
+            (scores.get(chunkId) ?? 0) +
+            computeQueryAwareBoost(row, args.query),
+          sourceKind: row.sourceKind,
+        },
+      ];
+    })
+    .sort((left, right) => right.score - left.score)
+    .slice(0, args.limit);
 
   return {
     query: args.query,

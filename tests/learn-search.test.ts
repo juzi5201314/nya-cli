@@ -7,6 +7,7 @@ import {
   closeDatabase,
   initializeEmptyIndex,
   openDatabase,
+  replaceSourceData,
 } from '../src/db/database';
 import type {
   EmbeddingFingerprint,
@@ -251,6 +252,140 @@ describe('learn and search', () => {
 
     expect(searchResult.results.length).toBeGreaterThan(0);
     expect(searchResult.results[0]?.path).toBe('README.md');
+
+    closeDatabase(db);
+  });
+
+  test('prefers path and section matches for code identifier queries', async () => {
+    const dbDir = join(tempRoot, 'db');
+    const dbPath = join(dbDir, 'index.sqlite');
+    const db = await openDatabase(dbPath);
+    const provider = new FakeEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      provider.fingerprint(baseConfig.index.chunking_version)
+    );
+
+    replaceSourceData({
+      db,
+      sourceKey: 'repo',
+      documents: [
+        {
+          document: {
+            sourceKey: 'repo',
+            sourceKind: 'local_git',
+            sourceLocator: '/repo',
+            canonicalLocator: null,
+            path: 'src/core/search/search-index.ts',
+            language: 'ts',
+            title: 'search-index.ts',
+            contentHash: 'doc-1',
+          },
+          chunks: [
+            {
+              chunkIndex: 0,
+              section: 'search-index.ts',
+              content: 'Implements reciprocal rank fusion for local retrieval.',
+              tokenEstimate: 10,
+              contentHash: 'chunk-1',
+            },
+          ],
+          embedding: [[0, 0, 0, 0]],
+        },
+        {
+          document: {
+            sourceKey: 'repo',
+            sourceKind: 'local_git',
+            sourceLocator: '/repo',
+            canonicalLocator: null,
+            path: 'src/commands/search.ts',
+            language: 'ts',
+            title: 'search.ts',
+            contentHash: 'doc-2',
+          },
+          chunks: [
+            {
+              chunkIndex: 0,
+              section: 'search.ts',
+              content:
+                'import { searchIndex } from "../core/search/search-index";',
+              tokenEstimate: 10,
+              contentHash: 'chunk-2',
+            },
+          ],
+          embedding: [[10, 10, 10, 10]],
+        },
+      ],
+    });
+
+    const searchResult = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'searchIndex',
+      limit: 5,
+      scope: 'project',
+      databasePath: dbPath,
+    });
+
+    expect(searchResult.results[0]?.path).toBe(
+      'src/core/search/search-index.ts'
+    );
+
+    closeDatabase(db);
+  });
+
+  test('builds snippets around the query instead of always using content prefix', async () => {
+    const dbDir = join(tempRoot, 'db');
+    const dbPath = join(dbDir, 'index.sqlite');
+    const db = await openDatabase(dbPath);
+    const provider = new FakeEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      provider.fingerprint(baseConfig.index.chunking_version)
+    );
+
+    replaceSourceData({
+      db,
+      sourceKey: 'repo',
+      documents: [
+        {
+          document: {
+            sourceKey: 'repo',
+            sourceKind: 'local_git',
+            sourceLocator: '/repo',
+            canonicalLocator: null,
+            path: 'src/db/database.ts',
+            language: 'ts',
+            title: 'database.ts',
+            contentHash: 'doc-3',
+          },
+          chunks: [
+            {
+              chunkIndex: 0,
+              section: 'database.ts',
+              content: `${'prefix '.repeat(48)}embedding fingerprint changed requires rebuild before continuing.`,
+              tokenEstimate: 90,
+              contentHash: 'chunk-3',
+            },
+          ],
+          embedding: [[0, 0, 0, 0]],
+        },
+      ],
+    });
+
+    const searchResult = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'embedding fingerprint changed',
+      limit: 5,
+      scope: 'project',
+      databasePath: dbPath,
+    });
+
+    expect(searchResult.results[0]?.snippet).toContain(
+      'embedding fingerprint changed'
+    );
+    expect(searchResult.results[0]?.snippet.startsWith('…')).toBe(true);
 
     closeDatabase(db);
   });
