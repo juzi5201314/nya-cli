@@ -225,6 +225,14 @@ nya learn web https://example.com/docs --crawl --max-pages 20 --max-depth 2
 }
 ```
 
+### 重复 learn 行为
+
+你可以重复对同一个 source 执行 `learn`：
+
+- 对同一个 `sourceKey` 会**覆盖写入**（先删除旧数据，再写入新数据），不会累加出两份重复内容。
+- 重复执行会重新抓取/读文件并重新做 embedding，成本接近一次全量 `learn`。
+- `sourceKey` 是 `db rebuild --source <sourceKey>` 的输入，可用 `nya db scope --global|--project` 查看；注意不同 URL/路径写法可能被当成不同的 source。
+
 ### 本地混合检索
 
 ```bash
