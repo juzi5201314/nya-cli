@@ -6,7 +6,7 @@ import { Readability } from '@mozilla/readability';
 import { parseHTML } from 'linkedom';
 import TurndownService from 'turndown';
 
-import type { AppConfig } from '../types/config';
+import type { AppConfig, WebFetchMode } from '../types/config';
 import type {
   WebFetchedPage,
   WebIngestProvider,
@@ -20,6 +20,16 @@ function readRequiredEnv(name: string): string {
     throw new Error(`缺少环境变量: ${name}`);
   }
   return value;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeUrl(url: string): string {
+  const parsed = new URL(url);
+  parsed.hash = '';
+  return parsed.toString();
 }
 
 class TavilyWebSearchProvider implements WebSearchProvider {
@@ -213,7 +223,7 @@ class ScraplingWebIngestProvider implements WebIngestProvider {
   async fetchPage(
     url: string,
     options: {
-      fetchMode: AppConfig['web']['ingest']['providers']['scrapling']['default_fetch_mode'];
+      fetchMode: WebFetchMode;
     }
   ): Promise<WebFetchedPage> {
     await this.assertAvailable();
@@ -265,6 +275,407 @@ class ScraplingWebIngestProvider implements WebIngestProvider {
   }
 }
 
+type CloudflareCrawlJobId = string;
+
+type CloudflareCrawlStatus =
+  | 'running'
+  | 'cancelled_due_to_timeout'
+  | 'cancelled_due_to_limits'
+  | 'cancelled_by_user'
+  | 'errored'
+  | 'completed';
+
+type CloudflareCrawlRecordStatus =
+  | 'queued'
+  | 'completed'
+  | 'disallowed'
+  | 'skipped'
+  | 'errored'
+  | 'cancelled';
+
+type CloudflareCrawlRecord = {
+  url?: string;
+  status?: CloudflareCrawlRecordStatus;
+  markdown?: string;
+  metadata?: {
+    status?: number;
+    title?: string;
+    url?: string;
+  };
+};
+
+type CloudflareCrawlJobStatusResponse = {
+  success?: boolean;
+  result?: {
+    id?: string;
+    status?: CloudflareCrawlStatus;
+  };
+  errors?: unknown[];
+};
+
+type CloudflareCrawlJobRecordsResponse = {
+  success?: boolean;
+  result?: {
+    id?: string;
+    status?: CloudflareCrawlStatus;
+    records?: CloudflareCrawlRecord[];
+    cursor?: number | string;
+    total?: number;
+    finished?: number;
+  };
+  errors?: unknown[];
+};
+
+class CloudflareWebIngestProvider implements WebIngestProvider {
+  readonly id = 'cloudflare' as const;
+
+  constructor(private readonly config: AppConfig) {}
+
+  async assertAvailable(): Promise<void> {
+    const cloudflareConfig = this.config.web.ingest.providers.cloudflare;
+    if (!cloudflareConfig.account_id.trim()) {
+      throw new Error(
+        '缺少 Cloudflare account_id。请在 nya.toml 中配置 [web.ingest.providers.cloudflare].account_id'
+      );
+    }
+
+    readRequiredEnv(cloudflareConfig.api_token_env);
+  }
+
+  private headers(): HeadersInit {
+    const cloudflareConfig = this.config.web.ingest.providers.cloudflare;
+    return {
+      Authorization: `Bearer ${readRequiredEnv(cloudflareConfig.api_token_env)}`,
+      'Content-Type': 'application/json',
+    };
+  }
+
+  private endpoint(path: string): string {
+    const cloudflareConfig = this.config.web.ingest.providers.cloudflare;
+    return `${cloudflareConfig.base_url.replace(/\/+$/, '')}${path}`;
+  }
+
+  private async startCrawlJob(args: {
+    url: string;
+    maxPages: number;
+    maxDepth: number;
+    render: boolean;
+  }): Promise<CloudflareCrawlJobId> {
+    const cloudflareConfig = this.config.web.ingest.providers.cloudflare;
+    const accountId = cloudflareConfig.account_id.trim();
+
+    const response = await fetch(
+      this.endpoint(`/accounts/${accountId}/browser-rendering/crawl`),
+      {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({
+          url: args.url,
+          limit: args.maxPages,
+          depth: args.maxDepth,
+          formats: ['markdown'],
+          render: args.render,
+          source: cloudflareConfig.source,
+          options: {
+            includeExternalLinks: cloudflareConfig.include_external_links,
+            includeSubdomains: cloudflareConfig.include_subdomains,
+            includePatterns: cloudflareConfig.include_patterns,
+            excludePatterns: cloudflareConfig.exclude_patterns,
+          },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Cloudflare /crawl 请求失败 (${response.status}): ${body}`);
+    }
+
+    const json = (await response.json()) as {
+      success?: boolean;
+      result?: string;
+      errors?: unknown[];
+    };
+
+    const jobId = json.result;
+    if (!json.success || !jobId || typeof jobId !== 'string') {
+      throw new Error(
+        `Cloudflare /crawl 返回异常: ${JSON.stringify(
+          { success: json.success, result: json.result, errors: json.errors },
+          null,
+          2
+        )}`
+      );
+    }
+
+    return jobId;
+  }
+
+  private async waitForCrawlJob(jobId: CloudflareCrawlJobId): Promise<void> {
+    const cloudflareConfig = this.config.web.ingest.providers.cloudflare;
+    const accountId = cloudflareConfig.account_id.trim();
+
+    for (let attempt = 0; attempt < cloudflareConfig.max_poll_attempts; attempt += 1) {
+      const response = await fetch(
+        this.endpoint(
+          `/accounts/${accountId}/browser-rendering/crawl/${jobId}?limit=1`
+        ),
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${readRequiredEnv(cloudflareConfig.api_token_env)}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(
+          `Cloudflare /crawl status 请求失败 (${response.status}): ${body}`
+        );
+      }
+
+      const json = (await response.json()) as CloudflareCrawlJobStatusResponse;
+      const status = json.result?.status;
+
+      if (!json.success || !status) {
+        throw new Error(
+          `Cloudflare /crawl status 返回异常: ${JSON.stringify(json, null, 2)}`
+        );
+      }
+
+      if (status === 'running') {
+        await sleep(cloudflareConfig.poll_interval_ms);
+        continue;
+      }
+
+      if (status !== 'completed') {
+        throw new Error(`Cloudflare crawl job 未完成: status=${status}`);
+      }
+
+      return;
+    }
+
+    throw new Error('Cloudflare crawl job 轮询超时未完成');
+  }
+
+  private async fetchCompletedRecords(
+    jobId: CloudflareCrawlJobId,
+    limit: number
+  ): Promise<CloudflareCrawlRecord[]> {
+    const cloudflareConfig = this.config.web.ingest.providers.cloudflare;
+    const accountId = cloudflareConfig.account_id.trim();
+
+    const records: CloudflareCrawlRecord[] = [];
+    let cursor: string | number | null = null;
+
+    while (records.length < limit) {
+      const params = new URLSearchParams();
+      params.set('status', 'completed');
+      params.set('limit', String(Math.min(1000, limit - records.length)));
+      if (cursor !== null) {
+        params.set('cursor', String(cursor));
+      }
+
+      const response = await fetch(
+        this.endpoint(
+          `/accounts/${accountId}/browser-rendering/crawl/${jobId}?${params.toString()}`
+        ),
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${readRequiredEnv(cloudflareConfig.api_token_env)}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(
+          `Cloudflare /crawl records 请求失败 (${response.status}): ${body}`
+        );
+      }
+
+      const json = (await response.json()) as CloudflareCrawlJobRecordsResponse;
+      const batch = json.result?.records ?? [];
+
+      if (!json.success) {
+        throw new Error(
+          `Cloudflare /crawl records 返回异常: ${JSON.stringify(json, null, 2)}`
+        );
+      }
+
+      records.push(...batch);
+
+      if (json.result?.cursor === undefined || json.result?.cursor === null) {
+        break;
+      }
+
+      cursor = json.result.cursor;
+    }
+
+    return records.slice(0, limit);
+  }
+
+  private async runCrawlOnce(args: {
+    url: string;
+    maxPages: number;
+    maxDepth: number;
+    render: boolean;
+  }): Promise<WebFetchedPage[]> {
+    const jobId = await this.startCrawlJob(args);
+    await this.waitForCrawlJob(jobId);
+
+    const rawRecords = await this.fetchCompletedRecords(jobId, args.maxPages);
+    const seen = new Set<string>();
+
+    const pages: WebFetchedPage[] = [];
+    for (const record of rawRecords) {
+      if (record.status !== 'completed') {
+        continue;
+      }
+      const recordUrl = record.url ?? record.metadata?.url;
+      if (!recordUrl) {
+        continue;
+      }
+
+      const normalized = normalizeUrl(recordUrl);
+      if (seen.has(normalized)) {
+        continue;
+      }
+      seen.add(normalized);
+
+      const markdown = (record.markdown ?? '').trim();
+      if (!markdown) {
+        continue;
+      }
+
+      pages.push({
+        requestedUrl: args.url,
+        finalUrl: normalized,
+        title: record.metadata?.title?.trim() || normalized,
+        canonicalUrl: null,
+        markdown,
+        html: '',
+        links: [],
+        fetchModeUsed: args.render ? 'fetch' : 'get',
+      });
+    }
+
+    return pages.slice(0, args.maxPages);
+  }
+
+  async fetchPage(
+    url: string,
+    options: {
+      fetchMode: AppConfig['web']['ingest']['providers']['scrapling']['default_fetch_mode'];
+    }
+  ): Promise<WebFetchedPage> {
+    await this.assertAvailable();
+
+    const cloudflareConfig = this.config.web.ingest.providers.cloudflare;
+    const maxPages = 1;
+    const maxDepth = 0;
+
+    const tryRender = async (render: boolean, minMarkdownChars: number) => {
+      const pages = await this.runCrawlOnce({
+        url,
+        maxPages,
+        maxDepth,
+        render,
+      });
+
+      const page = pages[0];
+      if (!page) {
+        throw new Error('Cloudflare crawl 未返回任何可用页面记录');
+      }
+
+      if (page.markdown.length < minMarkdownChars) {
+        throw new Error(
+          `正文提取内容过短 (${page.markdown.length} chars), render=${String(render)}`
+        );
+      }
+
+      return page;
+    };
+
+    if (options.fetchMode === 'get') {
+      return tryRender(false, 1);
+    }
+    if (options.fetchMode === 'fetch') {
+      return tryRender(true, 1);
+    }
+
+    try {
+      return await tryRender(false, cloudflareConfig.min_markdown_chars);
+    } catch (error) {
+      try {
+        return await tryRender(true, 1);
+      } catch {
+        // 最后兜底：如果页面确实很短，仍然返回一次 render=false 的结果（与 scrapling auto 的“尽力而为”行为一致）
+        return await tryRender(false, 1);
+      }
+    }
+  }
+
+  async crawl(
+    url: string,
+    options: {
+      maxPages: number;
+      maxDepth: number;
+      fetchMode: WebFetchMode;
+    }
+  ): Promise<WebFetchedPage[]> {
+    await this.assertAvailable();
+
+    const cloudflareConfig = this.config.web.ingest.providers.cloudflare;
+    const maxPages = options.maxPages;
+    const maxDepth = options.maxDepth;
+
+    const tryRender = async (render: boolean, minGoodPages: number) => {
+      const pages = await this.runCrawlOnce({
+        url,
+        maxPages,
+        maxDepth,
+        render,
+      });
+
+      const goodPages = pages.filter(
+        (page) => page.markdown.length >= cloudflareConfig.min_markdown_chars
+      );
+
+      if (pages.length === 0) {
+        throw new Error('Cloudflare crawl 未返回任何可用页面记录');
+      }
+
+      if (goodPages.length < minGoodPages) {
+        throw new Error(
+          `Cloudflare crawl 返回内容过短页面过多 (good=${goodPages.length}/${pages.length}), render=${String(render)}`
+        );
+      }
+
+      return pages;
+    };
+
+    if (options.fetchMode === 'get') {
+      return this.runCrawlOnce({ url, maxPages, maxDepth, render: false });
+    }
+    if (options.fetchMode === 'fetch') {
+      return this.runCrawlOnce({ url, maxPages, maxDepth, render: true });
+    }
+
+    try {
+      return await tryRender(false, 1);
+    } catch (error) {
+      try {
+        return await tryRender(true, 1);
+      } catch {
+        return await this.runCrawlOnce({ url, maxPages, maxDepth, render: false });
+      }
+    }
+  }
+}
+
 export function createWebSearchProvider(config: AppConfig): WebSearchProvider {
   switch (config.web.search.provider) {
     case 'tavily':
@@ -276,5 +687,7 @@ export function createWebIngestProvider(config: AppConfig): WebIngestProvider {
   switch (config.web.ingest.provider) {
     case 'scrapling':
       return new ScraplingWebIngestProvider(config);
+    case 'cloudflare':
+      return new CloudflareWebIngestProvider(config);
   }
 }
