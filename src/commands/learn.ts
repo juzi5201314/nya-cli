@@ -76,7 +76,11 @@ export async function runLearnWeb(args: {
       );
     }
 
-    const providerConfig = runtime.config.web.ingest.providers.scrapling;
+    const ingestConfig = runtime.config.web.ingest;
+    const providerConfig =
+      ingestConfig.provider === 'scrapling'
+        ? ingestConfig.providers.scrapling
+        : ingestConfig.providers.cloudflare;
     const result = await learnWebSource({
       source: args.source,
       config: runtime.config,

@@ -87,6 +87,29 @@ async function collectPages(args: {
     contentHash: string;
   }> = [];
 
+  if (args.crawl && args.provider.crawl) {
+    const crawled = await args.provider.crawl(normalizeUrl(args.rootUrl), {
+      maxPages: args.maxPages,
+      maxDepth: args.maxDepth,
+      fetchMode: args.fetchMode,
+    });
+
+    for (const page of crawled) {
+      pages.push({
+        sourceKey: normalizeUrl(args.rootUrl),
+        sourceLocator: page.finalUrl,
+        canonicalLocator: page.canonicalUrl,
+        path: page.finalUrl,
+        language: 'markdown',
+        title: page.title,
+        content: page.markdown,
+        contentHash: sha256(page.markdown),
+      });
+    }
+
+    return pages;
+  }
+
   while (queue.length > 0 && pages.length < args.maxPages) {
     const next = queue.shift();
     if (!next) {
