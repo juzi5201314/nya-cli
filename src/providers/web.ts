@@ -291,6 +291,19 @@ class ScraplingWebIngestProvider implements WebIngestProvider {
 
 type CloudflareCrawlJobId = string;
 
+type CloudflareSinglePageResponse = {
+  success?: boolean;
+  result?: {
+    markdown?: string;
+    metadata?: {
+      title?: string;
+      url?: string;
+      status?: number;
+    };
+  };
+  errors?: unknown[];
+};
+
 type CloudflareCrawlStatus =
   | 'running'
   | 'cancelled_due_to_timeout'
@@ -598,6 +611,62 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
     return pages.slice(0, args.maxPages);
   }
 
+  private async fetchMarkdownPage(args: {
+    url: string;
+    mode: Exclude<WebFetchMode, 'auto'>;
+  }): Promise<WebFetchedPage> {
+    const cloudflareConfig = this.config.web.ingest.providers.cloudflare;
+    const accountId = cloudflareConfig.account_id.trim();
+    const response = await this.fetch(
+      this.endpoint(`/accounts/${accountId}/browser-rendering/markdown`),
+      {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({
+          url: args.url,
+          ...(args.mode === 'fetch'
+            ? {
+                gotoOptions: {
+                  waitUntil: 'networkidle2',
+                },
+              }
+            : {}),
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(
+        `Cloudflare /markdown 请求失败 (${response.status}): ${body}`
+      );
+    }
+
+    const json = (await response.json()) as CloudflareSinglePageResponse;
+    const markdown = (json.result?.markdown ?? '').trim();
+    if (!json.success || !markdown) {
+      throw new Error(
+        `Cloudflare /markdown 返回异常: ${JSON.stringify(
+          { success: json.success, result: json.result, errors: json.errors },
+          null,
+          2
+        )}`
+      );
+    }
+
+    const finalUrl = normalizeUrl(json.result?.metadata?.url ?? args.url);
+    return {
+      requestedUrl: args.url,
+      finalUrl,
+      title: json.result?.metadata?.title?.trim() || finalUrl,
+      canonicalUrl: null,
+      markdown,
+      html: '',
+      links: [],
+      fetchModeUsed: args.mode,
+    };
+  }
+
   async fetchPage(
     url: string,
     options: {
@@ -607,46 +676,49 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
     await this.assertAvailable();
 
     const cloudflareConfig = this.config.web.ingest.providers.cloudflare;
-    const maxPages = 1;
-    const maxDepth = 0;
 
-    const tryRender = async (render: boolean, minMarkdownChars: number) => {
-      const pages = await this.runCrawlOnce({
-        url,
-        maxPages,
-        maxDepth,
-        render,
-      });
-
-      const page = pages[0];
-      if (!page) {
-        throw new Error('Cloudflare crawl 未返回任何可用页面记录');
-      }
-
+    const ensureMinMarkdown = (
+      page: WebFetchedPage,
+      minMarkdownChars: number
+    ): WebFetchedPage => {
       if (page.markdown.length < minMarkdownChars) {
         throw new Error(
-          `正文提取内容过短 (${page.markdown.length} chars), render=${String(render)}`
+          `正文提取内容过短 (${page.markdown.length} chars), fetch mode=${page.fetchModeUsed}`
         );
       }
-
       return page;
     };
 
     if (options.fetchMode === 'get') {
-      return tryRender(false, 1);
+      return ensureMinMarkdown(await this.fetchMarkdownPage({ url, mode: 'get' }), 1);
     }
     if (options.fetchMode === 'fetch') {
-      return tryRender(true, 1);
+      return ensureMinMarkdown(
+        await this.fetchMarkdownPage({ url, mode: 'fetch' }),
+        1
+      );
     }
 
+    let getPage: WebFetchedPage | null = null;
+    let firstError: unknown = null;
     try {
-      return await tryRender(false, cloudflareConfig.min_markdown_chars);
-    } catch {
+      getPage = ensureMinMarkdown(
+        await this.fetchMarkdownPage({ url, mode: 'get' }),
+        cloudflareConfig.min_markdown_chars
+      );
+      return getPage;
+    } catch (error) {
+      firstError = error;
       try {
-        return await tryRender(true, 1);
+        return ensureMinMarkdown(
+          await this.fetchMarkdownPage({ url, mode: 'fetch' }),
+          1
+        );
       } catch {
-        // 最后兜底：如果页面确实很短，仍然返回一次 render=false 的结果（与 scrapling auto 的“尽力而为”行为一致）
-        return await tryRender(false, 1);
+        if (getPage) {
+          return getPage;
+        }
+        throw firstError;
       }
     }
   }
@@ -697,18 +769,20 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
       return this.runCrawlOnce({ url, maxPages, maxDepth, render: true });
     }
 
+    let getPages: WebFetchedPage[] | null = null;
+    let firstError: unknown = null;
     try {
-      return await tryRender(false, 1);
-    } catch {
+      getPages = await tryRender(false, 1);
+      return getPages;
+    } catch (error) {
+      firstError = error;
       try {
         return await tryRender(true, 1);
       } catch {
-        return await this.runCrawlOnce({
-          url,
-          maxPages,
-          maxDepth,
-          render: false,
-        });
+        if (getPages && getPages.length > 0) {
+          return getPages;
+        }
+        throw firstError;
       }
     }
   }

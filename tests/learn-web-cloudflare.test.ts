@@ -178,19 +178,10 @@ function createConfig(args: { baseUrl: string }): AppConfig {
 }
 
 describe('learn web (cloudflare)', () => {
-  test('learns a single page; auto falls back to render=true', async () => {
+  test('learns a single page via /markdown; auto falls back to fetch mode', async () => {
     process.env.CLOUDFLARE_API_TOKEN = 'test-token';
 
-    let jobCounter = 0;
-    const jobs = new Map<
-      string,
-      {
-        render: boolean;
-        url: string;
-        limit: number;
-        depth: number;
-      }
-    >();
+    const markdownModes: string[] = [];
 
     const server = Bun.serve({
       port: 0,
@@ -201,66 +192,31 @@ describe('learn web (cloudflare)', () => {
         if (
           request.method === 'POST' &&
           pathname ===
-            '/client/v4/accounts/test-account/browser-rendering/crawl'
+            '/client/v4/accounts/test-account/browser-rendering/markdown'
         ) {
           const body = (await request.json()) as {
             url: string;
-            limit: number;
-            depth: number;
-            render: boolean;
+            gotoOptions?: {
+              waitUntil?: string;
+            };
           };
-          const jobId = `job-${jobCounter++}`;
-          jobs.set(jobId, {
-            render: Boolean(body.render),
-            url: body.url,
-            limit: body.limit,
-            depth: body.depth,
-          });
-          return Response.json({ success: true, result: jobId });
-        }
-
-        const match =
-          /^\/client\/v4\/accounts\/test-account\/browser-rendering\/crawl\/([^/]+)$/.exec(
-            pathname
-          );
-        if (request.method === 'GET' && match) {
-          const jobId = match[1] ?? '';
-          const job = jobs.get(jobId);
-          if (!job) {
-            return Response.json(
-              { success: false, errors: ['not found'] },
-              { status: 404 }
-            );
-          }
-
-          if (
-            url.searchParams.get('limit') === '1' &&
-            !url.searchParams.get('status')
-          ) {
-            return Response.json({
-              success: true,
-              result: { id: jobId, status: 'completed' },
-            });
-          }
-
-          const render = job.render;
-          const markdown = render
-            ? '# Docs\n\nThis page contains enough content for indexing.'
-            : 'short';
+          const mode =
+            body.gotoOptions?.waitUntil === 'networkidle2' ? 'fetch' : 'get';
+          markdownModes.push(mode);
+          const markdown =
+            mode === 'fetch'
+              ? '# Docs\n\nThis page contains enough content for indexing.'
+              : 'short';
 
           return Response.json({
             success: true,
             result: {
-              id: jobId,
-              status: 'completed',
-              records: [
-                {
-                  url: job.url,
-                  status: 'completed',
-                  markdown,
-                  metadata: { status: 200, title: 'Docs', url: job.url },
-                },
-              ],
+              markdown,
+              metadata: {
+                status: 200,
+                title: 'Docs',
+                url: body.url,
+              },
             },
           });
         }
@@ -305,6 +261,102 @@ describe('learn web (cloudflare)', () => {
 
       expect(result.documentsIndexed).toBe(1);
       expect(getDbStats(db).documents).toBe(1);
+      expect(markdownModes).toEqual(['get', 'fetch']);
+    } finally {
+      server.stop(true);
+      closeDatabase(db);
+    }
+  });
+
+  test('single-page fetch mode uses /markdown directly without crawl jobs', async () => {
+    process.env.CLOUDFLARE_API_TOKEN = 'test-token';
+
+    const markdownModes: string[] = [];
+    let crawlPosts = 0;
+
+    const server = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        const url = new URL(request.url);
+        const pathname = url.pathname;
+
+        if (
+          request.method === 'POST' &&
+          pathname ===
+            '/client/v4/accounts/test-account/browser-rendering/markdown'
+        ) {
+          const body = (await request.json()) as {
+            url: string;
+            gotoOptions?: {
+              waitUntil?: string;
+            };
+          };
+          const mode =
+            body.gotoOptions?.waitUntil === 'networkidle2' ? 'fetch' : 'get';
+          markdownModes.push(mode);
+          return Response.json({
+            success: true,
+            result: {
+              markdown: '# Docs\n\nExplicit fetch mode page.',
+              metadata: {
+                status: 200,
+                title: 'Docs',
+                url: body.url,
+              },
+            },
+          });
+        }
+
+        if (
+          request.method === 'POST' &&
+          pathname ===
+            '/client/v4/accounts/test-account/browser-rendering/crawl'
+        ) {
+          crawlPosts += 1;
+          return Response.json({ success: true, result: 'unexpected-crawl-job' });
+        }
+
+        return new Response('not found', { status: 404 });
+      },
+    });
+
+    const config = createConfig({
+      baseUrl: `http://127.0.0.1:${server.port}/client/v4`,
+    });
+
+    const db = await openDatabase(join(tempRoot, 'explicit-fetch.sqlite'));
+    const embeddingProvider = new FakeEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      embeddingProvider.fingerprint(config.index.chunking_version)
+    );
+
+    try {
+      const result = await learnWebSource({
+        source: 'https://example.com/docs',
+        config,
+        db,
+        scope: 'project',
+        scopePaths: {
+          scope: 'project',
+          projectDirName: '.nya-cli',
+          databasePath: join(tempRoot, 'explicit-fetch.sqlite'),
+          databaseDir: tempRoot,
+          remoteCacheDir: join(tempRoot, 'cache'),
+        },
+        embeddingProvider,
+        webIngestProvider: createWebIngestProvider(config),
+        rebuildTriggered: false,
+        rebuildReason: null,
+        crawl: false,
+        maxPages: 10,
+        maxDepth: 1,
+        fetchMode: 'fetch',
+      });
+
+      expect(result.documentsIndexed).toBe(1);
+      expect(markdownModes).toEqual(['fetch']);
+      expect(crawlPosts).toBe(0);
     } finally {
       server.stop(true);
       closeDatabase(db);

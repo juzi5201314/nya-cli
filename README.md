@@ -38,7 +38,7 @@
 - Embedding：`Google`、`OpenAI`
 - LLM：`Google`、`OpenAI`
 - Web Search：`Tavily`
-- Web Ingest：`Scrapling`
+- Web Ingest：`Scrapling`、`Cloudflare`
 
 ## 快速开始
 
@@ -104,8 +104,9 @@ CLOUDFLARE_API_TOKEN=...
 
 说明：
 
-- `web.ingest.provider` 支持 `scrapling`（本机抓取）与 `cloudflare`（Cloudflare Browser Rendering `/crawl`）。
+- `web.ingest.provider` 支持 `scrapling`（本机抓取）与 `cloudflare`（单页走 Cloudflare Browser Rendering `/markdown`，多页 `--crawl` 走 `/crawl`）。
 - 使用 `cloudflare` 时，需要在 `nya.toml` 中配置 `[web.ingest.providers.cloudflare].account_id`，并在环境变量中提供 `CLOUDFLARE_API_TOKEN`。
+- Cloudflare Free 的 `/crawl` 每天只有少量 job 配额；如果只是学习单页，当前实现不会再消耗 `/crawl` job。
 
 ### Provider 速率限制与重试
 

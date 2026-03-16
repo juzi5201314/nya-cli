@@ -91,7 +91,7 @@ export const appConfigSchema = z.object({
               .string()
               .url()
               .default('https://api.cloudflare.com/client/v4'),
-            default_fetch_mode: webFetchModeSchema.default('auto'),
+            default_fetch_mode: webFetchModeSchema.default('get'),
             default_crawl: z.boolean().default(false),
             default_max_pages: z.number().int().min(1).max(100000).default(25),
             default_max_depth: z.number().int().min(0).max(100000).default(2),
@@ -101,7 +101,7 @@ export const appConfigSchema = z.object({
               .int()
               .min(250)
               .max(30000)
-              .default(5000),
+              .default(10000),
             max_poll_attempts: z.number().int().min(1).max(1000).default(60),
             source: z.enum(['all', 'sitemaps', 'links']).default('all'),
             include_external_links: z.boolean().default(false),
@@ -115,12 +115,12 @@ export const appConfigSchema = z.object({
             account_id: '',
             api_token_env: 'CLOUDFLARE_API_TOKEN',
             base_url: 'https://api.cloudflare.com/client/v4',
-            default_fetch_mode: 'auto',
+            default_fetch_mode: 'get',
             default_crawl: false,
             default_max_pages: 25,
             default_max_depth: 2,
             min_markdown_chars: 200,
-            poll_interval_ms: 5000,
+            poll_interval_ms: 10000,
             max_poll_attempts: 60,
             source: 'all',
             include_external_links: false,
