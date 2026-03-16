@@ -3,13 +3,8 @@ import { basename, extname } from 'node:path';
 import type { AppConfig } from '../../types/config';
 import { sha256 } from '../../utils/hash';
 import { estimateTokens, normalizeWhitespace } from '../../utils/text';
-
-export type ChunkedDocument = {
-  section: string;
-  content: string;
-  tokenEstimate: number;
-  contentHash: string;
-};
+import { chunkCodeWithTreeSitter } from './chunk-code-tree-sitter';
+import type { ChunkedDocument } from './types';
 
 function isMarkdownFile(filePath: string): boolean {
   return ['.md', '.mdx', '.markdown'].includes(extname(filePath).toLowerCase());
@@ -122,11 +117,22 @@ function splitSlidingWindows(args: {
   return chunks;
 }
 
-export function chunkTextDocument(args: {
+export async function chunkTextDocument(args: {
   filePath: string;
   content: string;
   config: AppConfig;
-}): ChunkedDocument[] {
+}): Promise<ChunkedDocument[]> {
+  if (!isMarkdownFile(args.filePath)) {
+    try {
+      const codeChunks = await chunkCodeWithTreeSitter(args);
+      if (codeChunks && codeChunks.length > 0) {
+        return codeChunks;
+      }
+    } catch {
+      // Tree-sitter 只做增强能力；失败时直接回退到原有滑窗分块。
+    }
+  }
+
   const sections = isMarkdownFile(args.filePath)
     ? splitMarkdownSections(args.filePath, args.content)
     : [

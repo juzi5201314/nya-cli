@@ -51,7 +51,7 @@ export async function learnGitSource(args: {
   const fileTask = args.progress?.task('Index git files', repoFiles.length);
   const preparedDocuments = [];
   for (const repoFile of repoFiles) {
-    const chunks = chunkTextDocument({
+    const chunks = await chunkTextDocument({
       filePath: repoFile.relativePath,
       content: repoFile.content,
       config: args.config,

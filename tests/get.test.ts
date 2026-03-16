@@ -177,6 +177,7 @@ class FakeEmbeddingProvider implements EmbeddingProvider {
       dimensions: this.dimensions,
       taskType: 'RETRIEVAL_DOCUMENT',
       chunkingVersion,
+      chunker: 'tree-sitter',
     };
   }
 }

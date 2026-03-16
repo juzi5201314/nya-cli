@@ -119,6 +119,13 @@ CLOUDFLARE_API_TOKEN=...
 
 - 遇到 `429`（速率限制）时，会自动增加等待时间，并在启用重试时额外增加重试次数（默认 +2）。
 
+### 代码分块（默认启用 Tree-sitter）
+
+- `learn git` 在处理代码文件时，默认优先使用 `Tree-sitter` 按语法节点分块，而不是单纯按长度硬切。
+- `chunk_size` 仍然表示**单个 chunk 的目标字符上限**；Tree-sitter 会尽量在函数、类、顶层声明等边界切分。
+- `chunk_overlap` 仍然保留，但主要用于 Markdown 和不支持 Tree-sitter 的回退滑窗分块。
+- 构建产物会额外包含 `dist/tree-sitter/*.wasm`，保证 `dist/nya` 运行时可以直接加载 grammar 资源。
+
 ### 6. 先试一条最短链路
 
 ```bash
@@ -246,6 +253,7 @@ nya learn web https://example.com/docs --crawl --max-pages 20 --max-depth 2
 
 ```bash
 nya search "vector search for agents"
+nya search "vector search for agents" --limit 5
 ```
 
 JSON 输出：
@@ -274,6 +282,7 @@ nya search "vector search for agents" --json
 说明：
 
 - `search --json` 现在会返回 `documentId` 和 `sourceKey`
+- `search --limit <N>` 可以指定返回前 N 条结果，默认 `8`
 - agent 可以用 `documentId` 继续调用 `nya get --document-id <id>`
 - `section` 仍然表示命中的 chunk / 分段，不等于完整文档内容
 

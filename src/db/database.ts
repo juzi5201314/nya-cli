@@ -449,7 +449,8 @@ function fingerprintsEqual(
     left.model === right.model &&
     left.dimensions === right.dimensions &&
     left.taskType === right.taskType &&
-    left.chunkingVersion === right.chunkingVersion
+    left.chunkingVersion === right.chunkingVersion &&
+    left.chunker === right.chunker
   );
 }
 

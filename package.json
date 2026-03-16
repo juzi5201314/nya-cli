@@ -6,7 +6,7 @@
   "description": "Knowledge base CLI for agents",
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "bun build src/index.ts --target bun --outfile dist/nya",
+    "build": "bun build src/index.ts --target bun --outfile dist/nya && bun run scripts/copy-tree-sitter-assets.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "check": "bun run typecheck && biome check ."
@@ -16,6 +16,7 @@
     "@ai-sdk/openai": "^3.0.41",
     "@clack/prompts": "^1.1.0",
     "@mozilla/readability": "^0.6.0",
+    "@repomix/tree-sitter-wasms": "^0.1.16",
     "ai": "^6.0.116",
     "cac": "^7.0.0",
     "env-paths": "^4.0.0",
@@ -25,6 +26,7 @@
     "react": "^19.2.4",
     "sqlite-vec": "^0.1.7-alpha.2",
     "turndown": "^7.2.2",
+    "web-tree-sitter": "^0.26.7",
     "zod": "^4.3.6"
   },
   "devDependencies": {

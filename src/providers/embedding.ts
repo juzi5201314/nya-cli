@@ -126,6 +126,7 @@ class GoogleEmbeddingProvider implements EmbeddingProvider {
       dimensions: this.dimensions,
       taskType: this.documentTaskType,
       chunkingVersion,
+      chunker: 'tree-sitter',
     };
   }
 }
@@ -218,6 +219,7 @@ class OpenAiEmbeddingProvider implements EmbeddingProvider {
       dimensions: this.dimensions,
       taskType: this.config.embedding.task_type,
       chunkingVersion,
+      chunker: 'tree-sitter',
     };
   }
 }

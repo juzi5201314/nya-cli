@@ -8,6 +8,7 @@ export type EmbeddingFingerprint = {
   dimensions: number;
   taskType: string;
   chunkingVersion: string;
+  chunker: 'tree-sitter';
 };
 
 export type EmbeddingProvider = {

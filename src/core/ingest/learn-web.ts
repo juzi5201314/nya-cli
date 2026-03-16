@@ -204,7 +204,7 @@ export async function learnWebSource(args: {
   const embedTask = args.progress?.task('Embed pages', pages.length);
   const preparedDocuments = [];
   for (const page of pages) {
-    const chunks = chunkTextDocument({
+    const chunks = await chunkTextDocument({
       filePath: toChunkPath(page.sourceLocator),
       content: page.content,
       config: args.config,
