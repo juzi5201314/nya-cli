@@ -872,23 +872,39 @@ export type StoredDocumentRow = {
 export function searchVector(
   db: Database,
   embedding: number[],
-  limit: number
+  limit: number,
+  pathSuffixes: string[] = []
 ): Array<{ chunkId: number; rank: number }> {
   if (!tableExists(db, 'chunk_vec')) {
     return [];
   }
 
+  const suffixClause =
+    pathSuffixes.length > 0
+      ? ` AND (${pathSuffixes
+          .map((_, index) => `LOWER(documents.path) LIKE '%' || ?${index + 3}`)
+          .join(' OR ')})`
+      : '';
+
   const rows = db
-    .query<{ chunkId: number }, [Float32Array, number]>(
+    .query<{ chunkId: number }, [Float32Array, number, ...string[]]>(
       `
-        SELECT rowid AS chunkId
-        FROM chunk_vec
-        WHERE embedding MATCH ?1
-        ORDER BY distance
-        LIMIT ?2
+        SELECT vec_hits.chunkId AS chunkId
+        FROM (
+          SELECT rowid AS chunkId, distance
+          FROM chunk_vec
+          WHERE embedding MATCH ?1
+          ORDER BY distance
+          LIMIT ?2
+        ) AS vec_hits
+        JOIN chunks ON chunks.id = vec_hits.chunkId
+        JOIN documents ON documents.id = chunks.document_id
+        WHERE 1 = 1
+        ${suffixClause}
+        ORDER BY vec_hits.distance
       `
     )
-    .all(new Float32Array(embedding), limit);
+    .all(new Float32Array(embedding), limit, ...pathSuffixes);
 
   return rows.map((row, index) => ({
     chunkId: Number(row.chunkId),
@@ -911,7 +927,8 @@ function buildFtsQuery(query: string): string | null {
 export function searchFts(
   db: Database,
   query: string,
-  limit: number
+  limit: number,
+  pathSuffixes: string[] = []
 ): Array<{ chunkId: number; rank: number }> {
   if (!tableExists(db, 'chunk_fts')) {
     return [];
@@ -922,17 +939,27 @@ export function searchFts(
     return [];
   }
 
+  const suffixClause =
+    pathSuffixes.length > 0
+      ? ` AND (${pathSuffixes
+          .map((_, index) => `LOWER(documents.path) LIKE '%' || ?${index + 3}`)
+          .join(' OR ')})`
+      : '';
+
   const rows = db
-    .query<{ chunkId: number }, [string, number]>(
+    .query<{ chunkId: number }, [string, number, ...string[]]>(
       `
-        SELECT rowid AS chunkId
+        SELECT chunk_fts.rowid AS chunkId
         FROM chunk_fts
+        JOIN chunks ON chunks.id = chunk_fts.rowid
+        JOIN documents ON documents.id = chunks.document_id
         WHERE chunk_fts MATCH ?1
+        ${suffixClause}
         ORDER BY bm25(chunk_fts)
         LIMIT ?2
       `
     )
-    .all(ftsQuery, limit);
+    .all(ftsQuery, limit, ...pathSuffixes);
 
   return rows.map((row, index) => ({
     chunkId: Number(row.chunkId),
@@ -943,7 +970,8 @@ export function searchFts(
 export function searchLike(
   db: Database,
   query: string,
-  limit: number
+  limit: number,
+  pathSuffixes: string[] = []
 ): Array<{ chunkId: number; rank: number }> {
   if (!tableExists(db, 'chunks')) {
     return [];
@@ -957,19 +985,34 @@ export function searchLike(
   const uniqueTokens = [
     ...new Set(tokens.map((token) => token.toLowerCase())),
   ].slice(0, 8);
+  const suffixOffset = uniqueTokens.length + 1;
   const conditions = uniqueTokens
-    .map((_, index) => `LOWER(content) LIKE ?${index + 1}`)
+    .map((_, index) => `LOWER(chunks.content) LIKE ?${index + 1}`)
     .join(' OR ');
+  const suffixClause =
+    pathSuffixes.length > 0
+      ? ` AND (${pathSuffixes
+          .map(
+            (_, index) =>
+              `LOWER(documents.path) LIKE '%' || ?${suffixOffset + index}`
+          )
+          .join(' OR ')})`
+      : '';
   const statement = db.query<{ chunkId: number }, string[]>(
     `
-      SELECT id AS chunkId
+      SELECT chunks.id AS chunkId
       FROM chunks
+      JOIN documents ON documents.id = chunks.document_id
       WHERE ${conditions}
-      ORDER BY id
+      ${suffixClause}
+      ORDER BY chunks.id
       LIMIT ${limit}
     `
   );
-  const rows = statement.all(...uniqueTokens.map((token) => `%${token}%`));
+  const rows = statement.all(
+    ...uniqueTokens.map((token) => `%${token}%`),
+    ...pathSuffixes
+  );
 
   return rows.map((row, index) => ({
     chunkId: Number(row.chunkId),
@@ -980,7 +1023,8 @@ export function searchLike(
 export function searchMetadataLike(
   db: Database,
   query: string,
-  limit: number
+  limit: number,
+  pathSuffixes: string[] = []
 ): number[] {
   if (!tableExists(db, 'chunks') || !tableExists(db, 'documents')) {
     return [];
@@ -997,6 +1041,16 @@ export function searchMetadataLike(
         `(LOWER(documents.path) LIKE ?${index + 1} OR LOWER(chunks.section) LIKE ?${index + 1})`
     )
     .join(' OR ');
+  const suffixOffset = tokens.length + 1;
+  const suffixClause =
+    pathSuffixes.length > 0
+      ? ` AND (${pathSuffixes
+          .map(
+            (_, index) =>
+              `LOWER(documents.path) LIKE '%' || ?${suffixOffset + index}`
+          )
+          .join(' OR ')})`
+      : '';
 
   const statement = db.query<{ chunkId: number }, string[]>(
     `
@@ -1004,11 +1058,15 @@ export function searchMetadataLike(
       FROM chunks
       JOIN documents ON documents.id = chunks.document_id
       WHERE ${placeholders}
+      ${suffixClause}
       ORDER BY chunks.id
       LIMIT ${limit}
     `
   );
-  const rows = statement.all(...tokens.map((token) => `%${token}%`));
+  const rows = statement.all(
+    ...tokens.map((token) => `%${token}%`),
+    ...pathSuffixes
+  );
 
   return rows.map((row) => Number(row.chunkId));
 }

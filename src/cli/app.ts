@@ -87,16 +87,26 @@ export function createCli() {
     .option('--json', '以 JSON 输出结果')
     .option('--no-tui', '禁用 TUI 输出')
     .option('--project', '使用当前项目作用域数据库')
+    .option('--ext <suffix>', '仅返回指定文件后缀的结果，可重复传入', {
+      type: [String],
+    })
     .option('--limit <number>', '结果数量', {
       default: '8',
     })
     .action(
-      async (query: string, options: GlobalOptions & { limit?: string }) => {
+      async (
+        query: string,
+        options: GlobalOptions & {
+          ext?: string[];
+          limit?: string;
+        }
+      ) => {
         await runSearch({
           query,
           configPath: options.config,
           project: Boolean(options.project),
           asJson: Boolean(options.json),
+          ...(options.ext ? { extensions: options.ext } : {}),
           limit: Number.parseInt(options.limit ?? '8', 10),
         });
       }

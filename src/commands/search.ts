@@ -6,6 +6,7 @@ export async function runSearch(args: {
   configPath: string | undefined;
   project: boolean;
   asJson: boolean;
+  extensions?: string[];
   limit: number;
 }): Promise<void> {
   const runtime = await loadOperationRuntime({
@@ -24,6 +25,7 @@ export async function runSearch(args: {
       db: runtime.db,
       embeddingProvider: runtime.embeddingProvider,
       query: args.query,
+      ...(args.extensions ? { extensions: args.extensions } : {}),
       limit: args.limit,
       scope: runtime.scope,
       databasePath: runtime.scopePaths.databasePath,
@@ -40,6 +42,9 @@ export async function runSearch(args: {
           `query: ${result.query}`,
           `scope: ${result.scope}`,
           `database: ${result.databasePath}`,
+          ...(result.extensions.length > 0
+            ? [`extensions: ${result.extensions.join(', ')}`]
+            : []),
           'results: 0',
         ].join('\n'),
         false
@@ -51,6 +56,9 @@ export async function runSearch(args: {
       `query: ${result.query}`,
       `scope: ${result.scope}`,
       `database: ${result.databasePath}`,
+      ...(result.extensions.length > 0
+        ? [`extensions: ${result.extensions.join(', ')}`]
+        : []),
       `results: ${result.results.length}`,
       '',
     ];

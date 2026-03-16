@@ -254,6 +254,7 @@ nya learn web https://example.com/docs --crawl --max-pages 20 --max-depth 2
 ```bash
 nya search "vector search for agents"
 nya search "vector search for agents" --limit 5
+nya search "vector guide" --ext ts --ext md
 ```
 
 JSON 输出：
@@ -283,6 +284,7 @@ nya search "vector search for agents" --json
 
 - `search --json` 现在会返回 `documentId` 和 `sourceKey`
 - `search --limit <N>` 可以指定返回前 N 条结果，默认 `8`
+- `search --ext <suffix>` 可按文件后缀精确筛选结果，可重复传入，例如 `--ext ts --ext md`
 - agent 可以用 `documentId` 继续调用 `nya get --document-id <id>`
 - `section` 仍然表示命中的 chunk / 分段，不等于完整文档内容
 

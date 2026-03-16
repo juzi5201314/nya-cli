@@ -480,4 +480,132 @@ describe('learn and search', () => {
 
     closeDatabase(db);
   });
+
+  test('filters search results by explicit file suffixes', async () => {
+    const dbDir = join(tempRoot, 'db');
+    const dbPath = join(dbDir, 'index.sqlite');
+    const db = await openDatabase(dbPath);
+    const provider = new FakeEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      provider.fingerprint(baseConfig.index.chunking_version)
+    );
+
+    replaceSourceData({
+      db,
+      sourceKey: 'repo',
+      documents: [
+        {
+          document: {
+            sourceKey: 'repo',
+            sourceKind: 'local_git',
+            sourceLocator: '/repo',
+            canonicalLocator: null,
+            path: 'docs/guide.md',
+            language: 'md',
+            title: 'guide.md',
+            contentHash: 'doc-4',
+            content: 'vector guide for agents in markdown format',
+          },
+          chunks: [
+            {
+              chunkIndex: 0,
+              section: 'guide.md',
+              content: 'vector guide for agents in markdown format',
+              tokenEstimate: 10,
+              contentHash: 'chunk-4',
+            },
+          ],
+          embedding: [[10, 0, 0, 10]],
+        },
+        {
+          document: {
+            sourceKey: 'repo',
+            sourceKind: 'local_git',
+            sourceLocator: '/repo',
+            canonicalLocator: null,
+            path: 'src/guide.ts',
+            language: 'ts',
+            title: 'guide.ts',
+            contentHash: 'doc-5',
+            content: 'vector guide for agents in typescript format',
+          },
+          chunks: [
+            {
+              chunkIndex: 0,
+              section: 'guide.ts',
+              content: 'vector guide for agents in typescript format',
+              tokenEstimate: 10,
+              contentHash: 'chunk-5',
+            },
+          ],
+          embedding: [[10, 0, 0, 10]],
+        },
+        {
+          document: {
+            sourceKey: 'repo',
+            sourceKind: 'local_git',
+            sourceLocator: '/repo',
+            canonicalLocator: null,
+            path: 'src/native/main.c',
+            language: 'c',
+            title: 'main.c',
+            contentHash: 'doc-6',
+            content: 'vector guide for agents in native c format',
+          },
+          chunks: [
+            {
+              chunkIndex: 0,
+              section: 'main.c',
+              content: 'vector guide for agents in native c format',
+              tokenEstimate: 10,
+              contentHash: 'chunk-6',
+            },
+          ],
+          embedding: [[10, 0, 0, 10]],
+        },
+      ],
+    });
+
+    const tsOnly = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'vector guide',
+      extensions: ['ts'],
+      limit: 5,
+      scope: 'project',
+      databasePath: dbPath,
+    });
+    const mixed = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'vector guide',
+      extensions: ['md', '.ts'],
+      limit: 5,
+      scope: 'project',
+      databasePath: dbPath,
+    });
+    const cOnly = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'vector guide',
+      extensions: ['c'],
+      limit: 5,
+      scope: 'project',
+      databasePath: dbPath,
+    });
+
+    expect(tsOnly.extensions).toEqual(['.ts']);
+    expect(tsOnly.results.map((item) => item.path)).toEqual(['src/guide.ts']);
+    expect(mixed.extensions).toEqual(['.md', '.ts']);
+    expect(mixed.results.map((item) => item.path).sort()).toEqual([
+      'docs/guide.md',
+      'src/guide.ts',
+    ]);
+    expect(cOnly.results.map((item) => item.path)).toEqual([
+      'src/native/main.c',
+    ]);
+
+    closeDatabase(db);
+  });
 });

@@ -29,10 +29,27 @@ export type SearchResponse = {
   query: string;
   scope: ScopeMode;
   databasePath: string;
+  extensions: string[];
   results: SearchResult[];
 };
 
 const RRF_K = 60;
+
+export function normalizeSearchExtensions(
+  values: readonly string[] | undefined
+): string[] {
+  if (!values || values.length === 0) {
+    return [];
+  }
+
+  const normalized = values
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+    .map((value) => (value.startsWith('.') ? value : `.${value}`))
+    .filter((value) => value !== '.' && !value.includes('/') && !value.includes('\\'));
+
+  return [...new Set(normalized)];
+}
 
 function reciprocalRank(rank: number): number {
   return 1 / (RRF_K + rank);
@@ -78,17 +95,31 @@ export async function searchIndex(args: {
   db: Database;
   embeddingProvider: EmbeddingProvider;
   query: string;
+  extensions?: string[];
   limit: number;
   scope: ScopeMode;
   databasePath: string;
 }): Promise<SearchResponse> {
+  const extensions = normalizeSearchExtensions(args.extensions);
   const candidateLimit = Math.max(args.limit * 3, args.limit + 8);
   const queryEmbedding = await args.embeddingProvider.embedQuery(args.query);
-  const vectorHits = searchVector(args.db, queryEmbedding, candidateLimit);
-  const ftsHits = searchFts(args.db, args.query, candidateLimit);
+  const vectorHits = searchVector(
+    args.db,
+    queryEmbedding,
+    candidateLimit,
+    extensions
+  );
+  const ftsHits = searchFts(args.db, args.query, candidateLimit, extensions);
   const lexicalHits =
-    ftsHits.length > 0 ? [] : searchLike(args.db, args.query, candidateLimit);
-  const metadataHits = searchMetadataLike(args.db, args.query, candidateLimit);
+    ftsHits.length > 0
+      ? []
+      : searchLike(args.db, args.query, candidateLimit, extensions);
+  const metadataHits = searchMetadataLike(
+    args.db,
+    args.query,
+    candidateLimit,
+    extensions
+  );
 
   const scores = new Map<number, number>();
   for (const hit of vectorHits) {
@@ -143,6 +174,7 @@ export async function searchIndex(args: {
     query: args.query,
     scope: args.scope,
     databasePath: args.databasePath,
+    extensions,
     results,
   };
 }
