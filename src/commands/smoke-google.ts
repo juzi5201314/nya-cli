@@ -1,7 +1,9 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { readEnvFile } from '../config/load-env';
 
 type SmokeEnv = Record<string, string>;
 
@@ -124,8 +126,29 @@ async function defaultRunner(args: {
   };
 }
 
-function createEnv(env: SmokeEnv | undefined): SmokeEnv {
-  return env ?? snapshotProcessEnv();
+async function resolveEnv(options: RunSmokeGoogleOptions): Promise<SmokeEnv> {
+  if (options.env !== undefined) {
+    return options.env;
+  }
+
+  const env = snapshotProcessEnv();
+  const secret = env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() ?? '';
+  if (secret) {
+    return env;
+  }
+
+  const configPath = options.configPath ?? defaultConfigPath;
+  const fileEnv = await readEnvFile(join(dirname(configPath), '.env'));
+
+  for (const [key, value] of Object.entries(fileEnv)) {
+    if (env[key] !== undefined) {
+      continue;
+    }
+
+    env[key] = value;
+  }
+
+  return env;
 }
 
 function parseJson<T>(label: string, output: string): T {
@@ -270,7 +293,7 @@ function buildAiSearchArgs(configPath: string): string[] {
 export async function runSmokeGoogle(
   options: RunSmokeGoogleOptions = {}
 ): Promise<SmokeGoogleResult> {
-  const env = createEnv(options.env);
+  const env = await resolveEnv(options);
   const secret = env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() ?? '';
 
   if (!secret) {

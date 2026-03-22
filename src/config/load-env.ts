@@ -32,9 +32,13 @@ function parseEnvLine(line: string): { key: string; value: string } | null {
   };
 }
 
-async function loadEnvFileFromPath(envPath: string): Promise<void> {
+async function readEnvFileFromPath(
+  envPath: string
+): Promise<Record<string, string>> {
+  const env: Record<string, string> = {};
+
   if (!existsSync(envPath)) {
-    return;
+    return env;
   }
 
   const raw = await readFile(envPath, 'utf8');
@@ -44,12 +48,20 @@ async function loadEnvFileFromPath(envPath: string): Promise<void> {
       continue;
     }
 
-    if (process.env[parsed.key] !== undefined) {
+    if (env[parsed.key] !== undefined) {
       continue;
     }
 
-    process.env[parsed.key] = parsed.value;
+    env[parsed.key] = parsed.value;
   }
+
+  return env;
+}
+
+export async function readEnvFile(
+  envPath: string
+): Promise<Record<string, string>> {
+  return readEnvFileFromPath(envPath);
 }
 
 export async function loadProjectEnv(configPath?: string): Promise<void> {
@@ -62,6 +74,13 @@ export async function loadProjectEnv(configPath?: string): Promise<void> {
   }
 
   for (const envPath of candidates) {
-    await loadEnvFileFromPath(envPath);
+    const loaded = await readEnvFileFromPath(envPath);
+    for (const [key, value] of Object.entries(loaded)) {
+      if (process.env[key] !== undefined) {
+        continue;
+      }
+
+      process.env[key] = value;
+    }
   }
 }

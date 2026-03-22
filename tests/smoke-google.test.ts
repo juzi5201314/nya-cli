@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { runSmokeGoogle } from '../src/commands/smoke-google';
 
@@ -27,6 +30,53 @@ describe('smoke:google', () => {
       status: 'skipped',
       reason: 'GOOGLE_GENERATIVE_AI_API_KEY missing',
     });
+  });
+
+  test('loads GOOGLE_GENERATIVE_AI_API_KEY from repo .env when process env is missing', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'nya-cli-smoke-dotenv-'));
+    const originalKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+
+    try {
+      await writeFile(
+        join(tempDir, '.env'),
+        'GOOGLE_GENERATIVE_AI_API_KEY=temp-dotenv-google-key\n'
+      );
+
+      const seenEnv: Record<string, string> = {};
+      const result = await runSmokeGoogle({
+        configPath: join(tempDir, 'nya.toml'),
+        runner: async ({ env }) => {
+          seenEnv.GOOGLE_GENERATIVE_AI_API_KEY =
+            env.GOOGLE_GENERATIVE_AI_API_KEY ?? '';
+
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              documentsIndexed: 1,
+              chunksIndexed: 1,
+              skippedSymlinks: 0,
+              results: [{ chunkId: 1 }],
+              iterations: 1,
+              usedQueries: ['x'],
+              evidence: [{ evidenceId: 1 }],
+              citations: [{ evidenceId: 1 }],
+              structuredOutputFallbackUsed: false,
+            }),
+            stderr: '',
+          };
+        },
+      });
+
+      expect(result.status).toBe('passed');
+      expect(seenEnv.GOOGLE_GENERATIVE_AI_API_KEY).toBe(
+        'temp-dotenv-google-key'
+      );
+      expect(process.env.GOOGLE_GENERATIVE_AI_API_KEY).toBeUndefined();
+    } finally {
+      process.env.GOOGLE_GENERATIVE_AI_API_KEY = originalKey;
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   test('runs learn → search → ai-search with strict caps and reports counts', async () => {
