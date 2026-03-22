@@ -146,9 +146,7 @@ export function createCli() {
     .option('--json', '以 JSON 输出结果')
     .option('--no-tui', '禁用 TUI 输出')
     .option('--project', '使用当前项目作用域数据库')
-    .option('--limit <number>', '每个检索 query 的结果数量', {
-      default: '8',
-    })
+    .option('--limit <number>', '每个检索 query 的结果数量')
     .option('--max-steps <number>', '最多检索轮次')
     .option('--max-queries <number>', '每轮最多生成的 query 数量')
     .option('--max-evidence <number>', '最终保留的最大证据 chunk 数')
@@ -167,7 +165,7 @@ export function createCli() {
           configPath: options.config,
           project: Boolean(options.project),
           asJson: Boolean(options.json),
-          limit: Number.parseInt(options.limit ?? '8', 10),
+          limit: options.limit ? Number.parseInt(options.limit, 10) : undefined,
           maxSteps: options.maxSteps
             ? Number.parseInt(options.maxSteps, 10)
             : undefined,

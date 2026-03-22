@@ -1,5 +1,6 @@
 import type { AiSearchResponse } from '../core/search/ai-search';
 import { aiSearchIndex } from '../core/search/ai-search';
+import type { AppConfig } from '../types/config';
 import { redactText } from '../utils/redaction';
 import { closeDatabase, loadOperationRuntime, printOutput } from './shared';
 
@@ -46,17 +47,43 @@ export function renderAiSearchText(result: AiSearchResponse): string {
   return lines.join('\n');
 }
 
+export function resolveAiSearchExecutionOptions(
+  aiSearchConfig: AppConfig['ai_search'],
+  args: {
+    limit: number | undefined;
+    maxSteps: number | undefined;
+    maxQueries: number | undefined;
+    maxEvidence: number | undefined;
+  }
+): {
+  limit: number;
+  maxSteps: number;
+  maxQueriesPerStep: number;
+  maxEvidenceChunks: number;
+} {
+  return {
+    limit: args.limit ?? aiSearchConfig.retrieval_limit,
+    maxSteps: args.maxSteps ?? aiSearchConfig.max_steps,
+    maxQueriesPerStep: args.maxQueries ?? aiSearchConfig.max_queries_per_step,
+    maxEvidenceChunks: args.maxEvidence ?? aiSearchConfig.max_evidence_chunks,
+  };
+}
+
 export async function runAiSearch(args: {
   query: string;
   configPath: string | undefined;
   project: boolean;
   asJson: boolean;
-  limit: number;
+  limit: number | undefined;
   maxSteps: number | undefined;
   maxQueries: number | undefined;
   maxEvidence: number | undefined;
+  runtimeLoader?: typeof loadOperationRuntime;
+  searchExecutor?: typeof aiSearchIndex;
 }): Promise<void> {
-  const runtime = await loadOperationRuntime({
+  const runtimeLoader = args.runtimeLoader ?? loadOperationRuntime;
+  const searchExecutor = args.searchExecutor ?? aiSearchIndex;
+  const runtime = await runtimeLoader({
     configPath: args.configPath,
     scope: args.project ? 'project' : 'global',
   });
@@ -70,19 +97,27 @@ export async function runAiSearch(args: {
       );
     }
 
-    const result = await aiSearchIndex({
+    const aiSearchLimits = resolveAiSearchExecutionOptions(
+      runtime.config.ai_search,
+      {
+        limit: args.limit,
+        maxSteps: args.maxSteps,
+        maxQueries: args.maxQueries,
+        maxEvidence: args.maxEvidence,
+      }
+    );
+
+    const result = await searchExecutor({
       db: runtime.db,
       embeddingProvider: runtime.embeddingProvider,
       llmProvider: runtime.llmProvider,
       query: args.query,
-      limit: args.limit,
+      limit: aiSearchLimits.limit,
       scope: runtime.scope,
       databasePath: runtime.scopePaths.databasePath,
-      maxSteps: args.maxSteps ?? runtime.config.ai_search.max_steps,
-      maxQueriesPerStep:
-        args.maxQueries ?? runtime.config.ai_search.max_queries_per_step,
-      maxEvidenceChunks:
-        args.maxEvidence ?? runtime.config.ai_search.max_evidence_chunks,
+      maxSteps: aiSearchLimits.maxSteps,
+      maxQueriesPerStep: aiSearchLimits.maxQueriesPerStep,
+      maxEvidenceChunks: aiSearchLimits.maxEvidenceChunks,
     });
 
     if (args.asJson) {
