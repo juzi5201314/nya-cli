@@ -151,4 +151,35 @@ describe('tree-sitter chunking', () => {
     expect(chunks[0]?.content).not.toContain('function secondFeature');
     expect(chunks[1]?.content).toContain('function secondFeature');
   });
+
+  test('does not duplicate section labels when recursively splitting one symbol', async () => {
+    const chunks = await chunkTextDocument({
+      filePath: 'src/example.ts',
+      content: [
+        'export function foo() {',
+        ...Array.from(
+          { length: 30 },
+          (_, index) =>
+            `  const value${index} = "abcdefghijabcdefghijabcdefghij";`
+        ),
+        '  return foo;',
+        '}',
+      ].join('\n'),
+      config: {
+        ...config,
+        index: {
+          ...config.index,
+          chunk_size: 80,
+        },
+      },
+    });
+
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.map((chunk) => chunk.section)).toEqual(
+      chunks.map(() => 'example.ts · foo')
+    );
+    expect(chunks.some((chunk) => chunk.section.includes('foo · foo'))).toBe(
+      false
+    );
+  });
 });

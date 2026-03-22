@@ -118,6 +118,18 @@ function composeSectionLabel(filePath: string, symbolParts: string[]): string {
     : basename(filePath);
 }
 
+function appendSectionPart(
+  sectionParts: string[],
+  symbolName: string | null
+): string[] {
+  if (!symbolName) {
+    return sectionParts;
+  }
+
+  const lastPart = sectionParts[sectionParts.length - 1];
+  return lastPart === symbolName ? sectionParts : [...sectionParts, symbolName];
+}
+
 function readNodeLabel(
   node: Node | null | undefined,
   sourceBytes: Uint8Array
@@ -503,9 +515,7 @@ function materializeGroups(args: {
       group.children.length === 1 && firstChild
         ? extractSymbolName(firstChild, sourceBytes)
         : null;
-    const groupSectionParts = groupSymbolName
-      ? [...sectionParts, groupSymbolName]
-      : sectionParts;
+    const groupSectionParts = appendSectionPart(sectionParts, groupSymbolName);
     const groupSection = composeSectionLabel(filePath, groupSectionParts);
 
     if (
@@ -551,9 +561,7 @@ function splitNode(args: {
     args.node.endIndex
   );
   const symbolName = extractSymbolName(args.node, args.sourceBytes);
-  const sectionParts = symbolName
-    ? [...args.sectionParts, symbolName]
-    : args.sectionParts;
+  const sectionParts = appendSectionPart(args.sectionParts, symbolName);
   const section = composeSectionLabel(args.filePath, sectionParts);
   if (normalizeCodeContent(content).length <= args.chunkSize) {
     const chunk = toChunk(content, section);
