@@ -254,7 +254,7 @@ class ScriptedLlmProvider implements LlmProvider {
     private readonly answerResponses: Array<{
       answer: string;
       citationIds?: number[];
-      citations?: Array<{ evidenceId: number; quote?: string }>;
+      citations?: Array<number | { evidenceId: number; quote?: string }>;
     }>,
     private readonly structuredOutputFallbackUsed = false
   ) {}
@@ -579,6 +579,80 @@ describe('ai-search', () => {
     closeDatabase(db);
   });
 
+  test('accepts numeric citation arrays from model output', async () => {
+    const repoDir = join(tempRoot, 'repo-numeric-citations');
+    const dbDir = join(tempRoot, 'db-numeric-citations');
+    await mkdir(repoDir, { recursive: true });
+
+    await writeFile(
+      join(repoDir, 'README.md'),
+      '# Search\n\nGemini and Tavily are used to help agents search knowledge.\n'
+    );
+
+    await runGit(repoDir, ['init']);
+    await runGit(repoDir, ['config', 'user.email', 'test@example.com']);
+    await runGit(repoDir, ['config', 'user.name', 'Test User']);
+    await runGit(repoDir, ['add', '.']);
+    await runGit(repoDir, ['commit', '-m', 'initial']);
+
+    const db = await openDatabase(join(dbDir, 'index.sqlite'));
+    const embeddingProvider = new FakeEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      embeddingProvider.fingerprint(config.index.chunking_version)
+    );
+
+    await learnGitSource({
+      source: repoDir,
+      config,
+      db,
+      scope: 'project',
+      scopePaths: {
+        scope: 'project',
+        projectDirName: '.nya-cli',
+        databasePath: join(dbDir, 'index.sqlite'),
+        databaseDir: dbDir,
+        remoteCacheDir: join(tempRoot, 'cache-numeric-citations'),
+      },
+      embeddingProvider,
+      rebuildTriggered: false,
+      rebuildReason: null,
+    });
+
+    const result = await aiSearchIndex({
+      db,
+      embeddingProvider,
+      llmProvider: new ScriptedLlmProvider(
+        [
+          {
+            enough: false,
+            rationale: 'Need a focused search query.',
+            queries: ['Gemini Tavily agents'],
+          },
+        ],
+        [
+          {
+            answer: 'The repository discusses search tooling.',
+            citations: [1],
+          },
+        ]
+      ),
+      query: 'Gemini Tavily agents',
+      limit: 5,
+      scope: 'project',
+      databasePath: join(dbDir, 'index.sqlite'),
+      maxSteps: 1,
+      maxQueriesPerStep: 1,
+      maxEvidenceChunks: 5,
+    });
+
+    expect(result.groundingStatus).toBe('grounded');
+    expect(result.citations).toHaveLength(1);
+    expect(result.citations[0]?.documentId).toBeGreaterThan(0);
+    expect(result.citations[0]?.excerpt).toContain('Gemini');
+
+    closeDatabase(db);
+  });
   test('includes chunk excerpts in prompts and JSON output', async () => {
     const repoDir = join(tempRoot, 'repo-excerpts');
     const dbDir = join(tempRoot, 'db-excerpts');

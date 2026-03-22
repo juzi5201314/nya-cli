@@ -27,7 +27,7 @@ type AnswerResult = {
 
 type CitationCandidate = {
   evidenceId: number;
-  quote?: string;
+  quote?: string | undefined;
 };
 
 type EvidenceRecord = SearchResult & {
@@ -85,10 +85,13 @@ const plannerSchema = z.object({
   queries: z.array(z.string()).default([]),
 });
 
-const citationSchema = z.object({
-  evidenceId: z.coerce.number().int().positive(),
-  quote: z.string().optional(),
-});
+const citationSchema = z.union([
+  z.coerce.number().int().positive(),
+  z.object({
+    evidenceId: z.coerce.number().int().positive(),
+    quote: z.string().optional(),
+  }),
+]);
 
 const answerSchema = z.object({
   answer: z.string(),
@@ -243,15 +246,18 @@ function extractAnswerCitations(
   const unique: CitationCandidate[] = [];
 
   for (const citation of citations) {
-    if (seen.has(citation.evidenceId)) {
+    const normalizedCitation: CitationCandidate =
+      typeof citation === 'number' ? { evidenceId: citation } : citation;
+
+    if (seen.has(normalizedCitation.evidenceId)) {
       continue;
     }
-    seen.add(citation.evidenceId);
+    seen.add(normalizedCitation.evidenceId);
     const candidate: CitationCandidate = {
-      evidenceId: citation.evidenceId,
+      evidenceId: normalizedCitation.evidenceId,
     };
-    if (citation.quote !== undefined) {
-      candidate.quote = citation.quote;
+    if (normalizedCitation.quote !== undefined) {
+      candidate.quote = normalizedCitation.quote;
     }
     unique.push(candidate);
   }
