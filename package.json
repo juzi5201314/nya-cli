@@ -6,7 +6,8 @@
   "description": "Knowledge base CLI for agents",
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "bun build src/index.ts --target bun --outfile dist/nya && bun run scripts/copy-tree-sitter-assets.ts",
+    "build": "bun build src/index.ts --target bun --outfile dist/nya --external react-devtools-core && bun run scripts/copy-tree-sitter-assets.ts",
+    "smoke:google": "bun run scripts/smoke-google.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "check": "bun run typecheck && biome check ."
