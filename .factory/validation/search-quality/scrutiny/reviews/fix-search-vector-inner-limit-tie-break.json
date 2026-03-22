@@ -1,0 +1,34 @@
+{
+  "featureId": "fix-search-vector-inner-limit-tie-break",
+  "reviewedAt": "2026-03-22T14:20:51Z",
+  "commitId": "548e82f7a200a3c994dd6fb94beabe700526a367",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The fix improves deterministic ordering after retrieval, but it still does not stabilize the vec0 top-N selection before the inner LIMIT, so tie-heavy `searchVector()` results can still drift in filtered searches.",
+    "issues": [
+      {
+        "file": "src/db/database.ts",
+        "line": 1019,
+        "severity": "blocking",
+        "description": "`searchVector()` still uses `ORDER BY distance LIMIT ?2` inside the vec0 subquery and only applies the `chunkId` tie-break in JavaScript afterward. That means SQLite can still choose a different tied top-N subset before the fallback logic runs, and because `searchIndex()` passes `extensions` into `searchVector()` while the suffix filter is applied after the inner LIMIT, `--ext` searches can still underfill or drift under equal-distance ties."
+      },
+      {
+        "file": "tests/learn-search.test.ts",
+        "line": 1167,
+        "severity": "non_blocking",
+        "description": "The new regression is a useful dense-tie case and it does verify repeated `searchIndex()` stability, but it never combines the top-N boundary with `extensions`/suffix filtering, which is the path that still exposes the remaining instability risk."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The `search-worker` guidance says to use explicit tie-breakers, but it does not mention that sqlite-vec/vec0 rejects secondary `ORDER BY` keys in the KNN subquery. The worker had to discover that constraint experimentally and switch to a probe-and-expand fallback.",
+      "evidence": "`/.factory/missions/6586b515-2320-4b22-9fa5-669b0710e675/handoffs/2026-03-22T14-18-06-476Z__fix-search-vector-inner-limit-tie-break__0bf2e881-e3d4-4004-84e2-9f159f9e1a0f.json` records `skillFeedback.deviations` saying vec0 rejected secondary `ORDER BY` keys in KNN queries; the transcript skeleton shows the worker then implemented a fallback instead of the requested SQL shape."
+    }
+  ],
+  "addressesFailureFrom": "/root/projects/nya2/.factory/validation/search-quality/scrutiny/reviews/fix-search-retriever-tie-determinism.json",
+  "summary": "Fail: the implementation still does not close the tie-instability blocker before the vec0 inner LIMIT, and the regression does not cover the filtered top-N path where the workaround remains vulnerable."
+}

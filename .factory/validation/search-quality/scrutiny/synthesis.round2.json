@@ -1,0 +1,50 @@
+{
+  "milestone": "search-quality",
+  "round": 2,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "bun test",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "bun run typecheck",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "bunx biome check .",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 1,
+    "failed": 1,
+    "failedFeatures": ["fix-search-retriever-tie-determinism"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "fix-search-retriever-tie-determinism",
+      "severity": "blocking",
+      "description": "The vector retriever still orders equal-distance candidates only by distance before its inner LIMIT, so the top-N subset and downstream RRF ranking can still drift across runs."
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Documented that vector retriever tie ordering must be stabilized before the inner LIMIT; adding a secondary sort after LIMIT is too late for equal-distance candidates.",
+      "sourceFeature": "fix-search-retriever-tie-determinism"
+    }
+  ],
+  "suggestedGuidanceUpdates": [],
+  "rejectedObservations": [
+    {
+      "observation": "The search-worker skill's tests-first guidance was deviated from during the feature review.",
+      "reason": "Not systemic; this was a justified one-off repro-first deviation for a pure chunker regression and does not warrant an AGENTS or skill update."
+    }
+  ],
+  "previousRound": ".factory/validation/search-quality/scrutiny/synthesis.round1.json"
+}

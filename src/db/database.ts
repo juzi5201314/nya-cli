@@ -997,9 +997,16 @@ export function searchVector(
 
   const suffixClause =
     pathSuffixes.length > 0
-      ? ` AND (${pathSuffixes
-          .map((_, index) => `LOWER(documents.path) LIKE '%' || ?${index + 3}`)
-          .join(' OR ')})`
+      ? ` AND rowid IN (
+          SELECT chunks.id
+          FROM chunks
+          JOIN documents ON documents.id = chunks.document_id
+          WHERE (${pathSuffixes
+            .map(
+              (_, index) => `LOWER(documents.path) LIKE '%' || ?${index + 3}`
+            )
+            .join(' OR ')})
+        )`
       : '';
 
   const fetchRows = (
@@ -1011,18 +1018,14 @@ export function searchVector(
         [Float32Array, number, ...string[]]
       >(
         `
-        SELECT vec_hits.chunkId AS chunkId, vec_hits.distance AS distance
-        FROM (
-          SELECT rowid AS chunkId, distance
-          FROM chunk_vec
-          WHERE embedding MATCH ?1
-          ORDER BY distance
-          LIMIT ?2
-        ) AS vec_hits
-        JOIN chunks ON chunks.id = vec_hits.chunkId
-        JOIN documents ON documents.id = chunks.document_id
-        WHERE 1 = 1
+        SELECT
+          chunk_vec.rowid AS chunkId,
+          distance
+        FROM chunk_vec
+        WHERE embedding MATCH ?1
         ${suffixClause}
+        ORDER BY distance
+        LIMIT ?2
       `
       )
       .all(new Float32Array(embedding), fetchLimit, ...pathSuffixes);
@@ -1031,6 +1034,30 @@ export function searchVector(
       chunkId: Number(row.chunkId),
       distance: Number(row.distance),
     }));
+  };
+
+  const countFilteredRows = (): number => {
+    if (pathSuffixes.length === 0) {
+      const totalRows = db
+        .query<{ count: bigint }, []>('SELECT COUNT(*) AS count FROM chunk_vec')
+        .get();
+      return Number(totalRows?.count ?? 0n);
+    }
+
+    const totalRows = db
+      .query<{ count: bigint }, string[]>(
+        `
+        SELECT COUNT(*) AS count
+        FROM chunks
+        JOIN documents ON documents.id = chunks.document_id
+        WHERE (${pathSuffixes
+          .map((_, index) => `LOWER(documents.path) LIKE '%' || ?${index + 1}`)
+          .join(' OR ')})
+      `
+      )
+      .get(...pathSuffixes);
+
+    return Number(totalRows?.count ?? 0n);
   };
 
   const probeLimit = Math.max(limit + 1, 1);
@@ -1045,10 +1072,7 @@ export function searchVector(
     nextRow &&
     Math.abs(previousRow.distance - nextRow.distance) <= 1e-12
   ) {
-    const totalRows = db
-      .query<{ count: bigint }, []>('SELECT COUNT(*) AS count FROM chunk_vec')
-      .get();
-    const fetchAllLimit = Number(totalRows?.count ?? 0n);
+    const fetchAllLimit = countFilteredRows();
     rows = fetchAllLimit > 0 ? fetchRows(fetchAllLimit) : [];
   }
 

@@ -1028,6 +1028,137 @@ describe('learn and search', () => {
     closeDatabase(db);
   });
 
+  test('vector + --ext stays stable when a tie group crosses the limit', async () => {
+    const dbDir = join(tempRoot, 'db');
+    const dbPath = join(dbDir, 'index.sqlite');
+    const db = await openDatabase(dbPath);
+    const provider = new TieEmbeddingProvider();
+
+    initializeEmptyIndex(
+      db,
+      provider.fingerprint(baseConfig.index.chunking_version)
+    );
+
+    const documents = [] as Array<{
+      document: {
+        sourceKey: string;
+        sourceKind: 'local_git';
+        sourceLocator: string;
+        canonicalLocator: null;
+        path: string;
+        language: string;
+        title: string;
+        contentHash: string;
+        content: string;
+      };
+      chunks: Array<{
+        chunkIndex: number;
+        section: string;
+        content: string;
+        tokenEstimate: number;
+        contentHash: string;
+      }>;
+      embedding: number[][];
+    }>;
+
+    for (let index = 0; index < 10; index += 1) {
+      const content = `vector tie ts document ${index}`;
+      documents.push({
+        document: {
+          sourceKey: 'repo',
+          sourceKind: 'local_git',
+          sourceLocator: '/repo',
+          canonicalLocator: null,
+          path: `src/ts-${String(index).padStart(2, '0')}.ts`,
+          language: 'ts',
+          title: `ts-${index}.ts`,
+          contentHash: `doc-ts-${index}`,
+          content,
+        },
+        chunks: [
+          {
+            chunkIndex: 0,
+            section: `ts-${index}.ts`,
+            content,
+            tokenEstimate: 10,
+            contentHash: `chunk-ts-${index}`,
+          },
+        ],
+        embedding: [[10, 0]],
+      });
+    }
+
+    for (let index = 0; index < 10; index += 1) {
+      const content = `vector tie md document ${index}`;
+      documents.push({
+        document: {
+          sourceKey: 'repo',
+          sourceKind: 'local_git',
+          sourceLocator: '/repo',
+          canonicalLocator: null,
+          path: `docs/md-${String(index).padStart(2, '0')}.md`,
+          language: 'md',
+          title: `md-${index}.md`,
+          contentHash: `doc-md-${index}`,
+          content,
+        },
+        chunks: [
+          {
+            chunkIndex: 0,
+            section: `md-${index}.md`,
+            content,
+            tokenEstimate: 10,
+            contentHash: `chunk-md-${index}`,
+          },
+        ],
+        embedding: [[10, 0]],
+      });
+    }
+
+    replaceSourceData({
+      db,
+      sourceKey: 'repo',
+      documents,
+    });
+
+    const firstRun = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'delta',
+      extensions: ['ts'],
+      limit: 5,
+      scope: 'project',
+      databasePath: dbPath,
+    });
+    const secondRun = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'delta',
+      extensions: ['ts'],
+      limit: 5,
+      scope: 'project',
+      databasePath: dbPath,
+    });
+
+    expect(firstRun.results).toHaveLength(5);
+    expect(secondRun.results).toHaveLength(5);
+    expect(firstRun.results.every((item) => item.path.endsWith('.ts'))).toBe(
+      true
+    );
+    expect(secondRun.results.every((item) => item.path.endsWith('.ts'))).toBe(
+      true
+    );
+    expect(firstRun.results.map((item) => item.chunkId)).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+    expect(secondRun.results.map((item) => item.chunkId)).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+    expect(secondRun.results).toEqual(firstRun.results);
+
+    closeDatabase(db);
+  });
+
   test('uses deterministic tie-break ordering when scores are effectively tied', async () => {
     const dbDir = join(tempRoot, 'db');
     const dbPath = join(dbDir, 'index.sqlite');
