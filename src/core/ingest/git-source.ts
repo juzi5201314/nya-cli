@@ -134,12 +134,19 @@ async function ensureRemoteCache(
   paths: ScopePaths
 ): Promise<string> {
   const sourceUrl = url.trim();
-  const persistedUrl = normalizeLocatorForNetwork(sourceUrl);
-  const cachePath = resolve(paths.remoteCacheDir, sha256(persistedUrl));
+  const networkSafeUrl = normalizeLocatorForNetwork(sourceUrl);
+  const cachePath = resolve(paths.remoteCacheDir, sha256(networkSafeUrl));
 
   try {
     await stat(cachePath);
-    await runGit(['-C', cachePath, 'fetch', '--depth=1', sourceUrl, 'HEAD']);
+    await runGit([
+      '-C',
+      cachePath,
+      'fetch',
+      '--depth=1',
+      networkSafeUrl,
+      'HEAD',
+    ]);
     await runGit(['-C', cachePath, 'reset', '--hard', 'FETCH_HEAD']);
     await runGit([
       '-C',
@@ -147,7 +154,7 @@ async function ensureRemoteCache(
       'remote',
       'set-url',
       'origin',
-      persistedUrl,
+      networkSafeUrl,
     ]);
     return cachePath;
   } catch (error) {
@@ -157,14 +164,14 @@ async function ensureRemoteCache(
     ) {
       throw error;
     }
-    await runGit(['clone', '--depth=1', sourceUrl, cachePath]);
+    await runGit(['clone', '--depth=1', networkSafeUrl, cachePath]);
     await runGit([
       '-C',
       cachePath,
       'remote',
       'set-url',
       'origin',
-      persistedUrl,
+      networkSafeUrl,
     ]);
     return cachePath;
   }

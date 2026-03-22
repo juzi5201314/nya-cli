@@ -23,9 +23,7 @@
     "total": 2,
     "passed": 1,
     "failed": 1,
-    "failedFeatures": [
-      "fix-remote-git-credential-leak-window"
-    ]
+    "failedFeatures": ["fix-remote-git-credential-leak-window"]
   },
   "blockingIssues": [
     {

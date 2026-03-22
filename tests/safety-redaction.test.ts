@@ -1,9 +1,15 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 import type { z } from 'zod';
 import { printOutput } from '../src/commands/shared';
-import { learnGitSource } from '../src/core/ingest/learn-git';
 import { learnWebSource } from '../src/core/ingest/learn-web';
 import { aiSearchIndex } from '../src/core/search/ai-search';
 import {
@@ -261,17 +267,22 @@ class CapturingLlmProvider implements LlmProvider {
   }
 }
 
-async function runGit(cwd: string, args: string[]): Promise<void> {
-  const proc = Bun.spawn(['git', ...args], {
-    cwd,
-    stdout: 'ignore',
-    stderr: 'pipe',
-  });
-  const stderr = await new Response(proc.stderr).text();
-  const exitCode = await proc.exited;
-  if (exitCode !== 0) {
-    throw new Error(stderr);
-  }
+async function createLoggingGit(logFile: string): Promise<string> {
+  const binDir = join(tempRoot, 'fake-git-bin');
+  await mkdir(binDir, { recursive: true });
+
+  const scriptPath = join(binDir, 'git');
+  await writeFile(
+    scriptPath,
+    `#!/bin/sh
+set -eu
+printf '%s\n' "git $*" >> "${logFile}"
+exec /usr/local/bin/git "$@"
+`
+  );
+  await chmod(scriptPath, 0o755);
+
+  return binDir;
 }
 
 async function readTextTree(root: string): Promise<string> {
@@ -432,47 +443,188 @@ describe('secret redaction and at-rest hygiene', () => {
     const remoteRepo = join(tempRoot, 'remote.git');
     const dbPath = join(tempRoot, 'git.sqlite');
     const cacheDir = join(tempRoot, 'cache');
-    await mkdir(sourceRepo, { recursive: true });
-    await writeFile(
-      join(sourceRepo, 'README.md'),
-      '# Remote\n\nSecret marker content for git redaction tests.\n'
-    );
-
-    await runGit(sourceRepo, ['init']);
-    await runGit(sourceRepo, ['config', 'user.email', 'test@example.com']);
-    await runGit(sourceRepo, ['config', 'user.name', 'Test User']);
-    await runGit(sourceRepo, ['add', '.']);
-    await runGit(sourceRepo, ['commit', '-m', 'initial']);
-    await runGit(tempRoot, ['clone', '--bare', sourceRepo, remoteRepo]);
-
-    const db = await openDatabase(dbPath);
-    const embeddingProvider = new FakeEmbeddingProvider();
-    initializeEmptyIndex(
-      db,
-      embeddingProvider.fingerprint(config.index.chunking_version)
-    );
-
+    const gitLogPath = join(tempRoot, 'git-argv.log');
+    const resultPath = join(tempRoot, 'git-result.json');
+    const runnerPath = join(tempRoot, 'git-redaction-runner.js');
     const sourceUrl = `file://alice:git-secret@${remoteRepo}`;
-    const result = await learnGitSource({
-      source: sourceUrl,
-      config,
-      db,
-      scope: 'project',
-      scopePaths: {
-        scope: 'project',
-        projectDirName: '.nya-cli',
-        databasePath: dbPath,
-        databaseDir: tempRoot,
-        remoteCacheDir: cacheDir,
-      },
-      embeddingProvider,
-      rebuildTriggered: false,
-      rebuildReason: null,
-    });
+    await mkdir(sourceRepo, { recursive: true });
+    const fakeGitDir = await createLoggingGit(gitLogPath);
+    await writeFile(
+      runnerPath,
+      `import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { learnGitSource } from 'file:///root/projects/nya2/src/core/ingest/learn-git.ts';
+import { closeDatabase, initializeEmptyIndex, openDatabase } from 'file:///root/projects/nya2/src/db/database.ts';
 
-    const output = await captureConsoleOutput(() => printOutput(result, true));
+const config = ${JSON.stringify(config)};
+const tempRoot = ${JSON.stringify(tempRoot)};
+const sourceRepo = join(tempRoot, 'source-repo');
+const remoteRepo = join(tempRoot, 'remote.git');
+const dbPath = join(tempRoot, 'git.sqlite');
+const cacheDir = join(tempRoot, 'cache');
+const sourceUrl = 'file://alice:git-secret@' + remoteRepo;
+
+class FakeEmbeddingProvider {
+  id = 'google';
+  model = 'fake-google-embedding';
+  dimensions = 4;
+
+  fingerprint(chunkingVersion) {
+    return {
+      provider: 'google',
+      model: 'fake-google-embedding',
+      dimensions: this.dimensions,
+      taskType: 'RETRIEVAL_DOCUMENT',
+      chunkingVersion,
+      chunker: 'tree-sitter',
+    };
+  }
+
+  encode(text) {
+    const normalized = text.toLowerCase();
+    const base = [
+      normalized.includes('vector') ? 10 : 0,
+      normalized.includes('search') ? 10 : 0,
+      normalized.includes('git') ? 10 : 0,
+      normalized.includes('remote') ? 10 : 0,
+    ];
+    return Array.from({ length: this.dimensions }, (_, index) => base[index] ?? 0);
+  }
+
+  async embedDocuments(texts) {
+    return texts.map((text) => this.encode(text));
+  }
+
+  async embedQuery(text) {
+    return this.encode(text);
+  }
+
+  async embedTexts(texts) {
+    return texts.map(() => [10, 10, 0, 0]);
+  }
+}
+
+async function runGit(cwd, args) {
+  const proc = Bun.spawn(['git', ...args], {
+    cwd,
+    stdout: 'ignore',
+    stderr: 'pipe',
+  });
+  const stderr = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new Error(stderr);
+  }
+}
+
+await mkdir(sourceRepo, { recursive: true });
+await writeFile(
+  join(sourceRepo, 'README.md'),
+  '# Remote\\n\\nSecret marker content for git redaction tests.\\n'
+);
+await runGit(sourceRepo, ['init']);
+await runGit(sourceRepo, ['config', 'user.email', 'test@example.com']);
+await runGit(sourceRepo, ['config', 'user.name', 'Test User']);
+await runGit(sourceRepo, ['add', '.']);
+await runGit(sourceRepo, ['commit', '-m', 'initial']);
+await runGit(tempRoot, ['clone', '--bare', sourceRepo, remoteRepo]);
+
+const db = await openDatabase(dbPath);
+const embeddingProvider = new FakeEmbeddingProvider();
+initializeEmptyIndex(db, embeddingProvider.fingerprint(config.index.chunking_version));
+
+const scopePaths = {
+  scope: 'project',
+  projectDirName: '.nya-cli',
+  databasePath: dbPath,
+  databaseDir: tempRoot,
+  remoteCacheDir: cacheDir,
+};
+
+const first = await learnGitSource({
+  source: sourceUrl,
+  config,
+  db,
+  scope: 'project',
+  scopePaths,
+  embeddingProvider,
+  rebuildTriggered: false,
+  rebuildReason: null,
+});
+
+await writeFile(
+  join(sourceRepo, 'README.md'),
+  '# Remote\\n\\nSecond remote version with secret redaction checks.\\n'
+);
+await runGit(sourceRepo, ['add', '.']);
+await runGit(sourceRepo, ['commit', '-m', 'update']);
+await runGit(sourceRepo, ['remote', 'add', 'origin', remoteRepo]);
+await runGit(sourceRepo, ['push', '--force', 'origin', 'HEAD:master']);
+
+const second = await learnGitSource({
+  source: sourceUrl,
+  config,
+  db,
+  scope: 'project',
+  scopePaths,
+  embeddingProvider,
+  rebuildTriggered: false,
+  rebuildReason: null,
+});
+
+await writeFile(
+  ${JSON.stringify(resultPath)},
+  JSON.stringify({ firstDocumentsIndexed: first.documentsIndexed, second })
+);
+
+closeDatabase(db);
+`
+    );
+
+    const proc = Bun.spawn(['bun', runnerPath], {
+      cwd: tempRoot,
+      env: {
+        ...process.env,
+        PATH: `${fakeGitDir}:${process.env.PATH ?? ''}`,
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const [runnerStdout, runnerStderr, runnerExitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+
+    expect(runnerExitCode).toBe(0);
+    expect(runnerStdout).not.toContain('git-secret');
+    expect(runnerStderr).not.toContain('git-secret');
+
+    const resultText = await readFile(resultPath, 'utf8');
+    const { firstDocumentsIndexed, second } = JSON.parse(resultText) as {
+      firstDocumentsIndexed: number;
+      second: {
+        documentsIndexed: number;
+        sourceKey: string;
+        sourceLocator: string;
+        repoUrl: string;
+      };
+    };
+
+    expect(firstDocumentsIndexed).toBe(1);
+    expect(second.documentsIndexed).toBe(1);
+
+    const output = await captureConsoleOutput(() => printOutput(second, true));
     expect(output.stdout).not.toContain('git-secret');
     expect(output.stdout).toContain('[REDACTED]');
+
+    const db = await openDatabase(dbPath);
+
+    const gitLog = await readFile(gitLogPath, 'utf8');
+    expect(gitLog).toContain('git clone --depth=1');
+    expect(gitLog).toContain('fetch --depth=1');
+    expect(gitLog).not.toContain('git-secret');
+    expect(gitLog).toContain('[REDACTED]');
 
     const manifestRows = db
       .query<
