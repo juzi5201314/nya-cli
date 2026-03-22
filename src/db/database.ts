@@ -1,6 +1,8 @@
 import { Database } from 'bun:sqlite';
+import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join } from 'node:path';
 import * as sqliteVec from 'sqlite-vec';
 
 import type { EmbeddingFingerprint } from '../providers/types';
@@ -115,6 +117,8 @@ type SearchTablesOptions = {
   dimensions: number;
 };
 
+const readonlyDatabaseSnapshots = new WeakMap<Database, string>();
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -163,17 +167,45 @@ export async function openDatabase(databasePath: string): Promise<Database> {
 export function openReadonlyDatabase(databasePath: string): Database {
   maybeConfigureCustomSqlite();
 
-  const db = new Database(databasePath, {
-    readonly: true,
-    strict: true,
-    safeIntegers: true,
-  });
+  const snapshotDir = mkdtempSync(join(tmpdir(), 'nya-cli-readonly-'));
+  const snapshotDatabasePath = join(snapshotDir, basename(databasePath));
 
-  return db;
+  try {
+    copyFileSync(databasePath, snapshotDatabasePath);
+
+    for (const suffix of ['-wal', '-shm']) {
+      const sourceSidecar = `${databasePath}${suffix}`;
+      const snapshotSidecar = `${snapshotDatabasePath}${suffix}`;
+      try {
+        copyFileSync(sourceSidecar, snapshotSidecar);
+      } catch {
+        // 这些副本只用于只读检查；不存在时保持静默即可。
+      }
+    }
+
+    const db = new Database(snapshotDatabasePath, {
+      readonly: true,
+      strict: true,
+      safeIntegers: true,
+    });
+    readonlyDatabaseSnapshots.set(db, snapshotDir);
+    return db;
+  } catch (error) {
+    rmSync(snapshotDir, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 export function closeDatabase(db: Database): void {
-  db.close(false);
+  const snapshotDir = readonlyDatabaseSnapshots.get(db);
+  readonlyDatabaseSnapshots.delete(db);
+  try {
+    db.close(false);
+  } finally {
+    if (snapshotDir) {
+      rmSync(snapshotDir, { recursive: true, force: true });
+    }
+  }
 }
 
 function ensureMetadataTable(db: Database): void {

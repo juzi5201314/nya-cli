@@ -1,6 +1,3 @@
-import { copyFile, mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
 import { loadConfig } from '../config/load-config';
 import { loadProjectEnv } from '../config/load-env';
 import { resolveScopePaths } from '../config/paths';
@@ -165,35 +162,8 @@ export async function loadDbDoctorRuntime(args: {
     ensureDirectories: false,
   });
   const dbExists = await Bun.file(scopePaths.databasePath).exists();
-  let db: ReturnType<typeof openReadonlyDatabase> | null = null;
-  let cleanup = async () => {};
-
-  if (dbExists) {
-    const snapshotDir = await mkdtemp(join(tmpdir(), 'nya-cli-doctor-'));
-    const snapshotDatabasePath = join(
-      snapshotDir,
-      basename(scopePaths.databasePath)
-    );
-    try {
-      await copyFile(scopePaths.databasePath, snapshotDatabasePath);
-
-      for (const suffix of ['-wal', '-shm']) {
-        const sourceSidecar = `${scopePaths.databasePath}${suffix}`;
-        const snapshotSidecar = `${snapshotDatabasePath}${suffix}`;
-        if (await Bun.file(sourceSidecar).exists()) {
-          await copyFile(sourceSidecar, snapshotSidecar);
-        }
-      }
-
-      db = openReadonlyDatabase(snapshotDatabasePath);
-      cleanup = async () => {
-        await rm(snapshotDir, { recursive: true, force: true });
-      };
-    } catch (error) {
-      await rm(snapshotDir, { recursive: true, force: true });
-      throw error;
-    }
-  }
+  const db = dbExists ? openReadonlyDatabase(scopePaths.databasePath) : null;
+  const cleanup = async () => {};
   const fingerprint = config ? buildEmbeddingFingerprint(config) : null;
 
   return {

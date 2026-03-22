@@ -10,6 +10,7 @@ import {
   closeDatabase,
   initializeEmptyIndex,
   openDatabase,
+  openReadonlyDatabase,
 } from '../src/db/database';
 import type {
   EmbeddingFingerprint,
@@ -212,6 +213,12 @@ async function runCli(cwd: string, args: string[]) {
   };
 }
 
+function expectNoSidecars(files: Array<{ path: string; exists: boolean }>) {
+  for (const sidecar of files.slice(1)) {
+    expect(sidecar.exists).toBe(false);
+  }
+}
+
 function snapshotFiles(databasePath: string) {
   const filePaths = [
     databasePath,
@@ -401,8 +408,16 @@ describe('db doctor', () => {
 
     await closeDatabase(db);
     await Bun.sleep(200);
+    await rm(`${dbPath}-wal`, { force: true });
+    await rm(`${dbPath}-shm`, { force: true });
 
     const before = await snapshotFiles(dbPath);
+    expectNoSidecars(before);
+
+    const readonlyDb = openReadonlyDatabase(dbPath);
+    readonlyDb.query('SELECT 1;').get();
+    closeDatabase(readonlyDb);
+
     const result = await runCli(tempRoot, [
       'db',
       'doctor',
@@ -412,6 +427,7 @@ describe('db doctor', () => {
     ]);
     await Bun.sleep(200);
     const after = await snapshotFiles(dbPath);
+    expectNoSidecars(after);
 
     expect(result.exitCode).toBe(0);
     expect(after).toEqual(before);

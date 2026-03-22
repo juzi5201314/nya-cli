@@ -1,0 +1,179 @@
+{
+  "groupId": "full",
+  "milestone": "safety-correctness",
+  "testedAt": "2026-03-22T07:17:44Z",
+  "toolsUsed": [
+    "bun test",
+    "bun run src/index.ts",
+    "bun run smoke:google",
+    "custom Bun harness"
+  ],
+  "assertions": [
+    {
+      "id": "VAL-SAF-001",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/safety-search-tests.log"],
+      "note": "`learn-search.test.ts` confirmed tracked symlinks are skipped and the outside marker is not searchable."
+    },
+    {
+      "id": "VAL-SAF-002",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/safety-search-tests.log"],
+      "note": "Same harness asserted `skippedSymlinks === 1` in learn JSON output."
+    },
+    {
+      "id": "VAL-SAF-010",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/safety-search-tests.log"],
+      "note": "`printOutput` redacted userinfo, query params, and fragment params in text and JSON output."
+    },
+    {
+      "id": "VAL-SAF-011",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/safety-search-tests.log"],
+      "note": "Offline web ingest kept raw secret substrings out of SQLite locator fields."
+    },
+    {
+      "id": "VAL-SAF-012",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/safety-search-tests.log"],
+      "note": "Remote git ingest redacted credentials in outputs, SQLite, and cache config."
+    },
+    {
+      "id": "VAL-DB-001",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/db-tests.log"],
+      "note": "`rebuild.test.ts` returned non-zero for partial success and included per-source failures."
+    },
+    {
+      "id": "VAL-DB-002",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/db-tests.log"],
+      "note": "Failed rebuild state persisted with `lastRebuildStatus=failed`, error, and attempts."
+    },
+    {
+      "id": "VAL-DB-003",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/db-tests.log"],
+      "note": "Doctor reported degraded health when a manifest failed."
+    },
+    {
+      "id": "VAL-DB-004",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/db-cross-validation.log"],
+      "note": "Custom offline harness showed `db doctor` reporting `healthStatus=degraded` and `rebuildReason='embedding fingerprint changed'` for a valid fingerprint mismatch."
+    },
+    {
+      "id": "VAL-DB-005",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/db-tests.log"],
+      "note": "Fingerprint-mismatch guard blocked `db rebuild --source` with a stable error."
+    },
+    {
+      "id": "VAL-DB-006",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/db-tests.log"],
+      "note": "Fingerprint-mismatch guard blocked `db rebuild --failed-only` with a stable error."
+    },
+    {
+      "id": "VAL-DB-010",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/db-tests.log"],
+      "note": "Partial rebuild failure left the index degraded and preserved failed manifests."
+    },
+    {
+      "id": "VAL-DB-020",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/db-tests.log"],
+      "note": "`db doctor --project --json` in an empty directory returned `dbExists=false` and did not create a project DB."
+    },
+    {
+      "id": "VAL-DB-021",
+      "status": "fail",
+      "evidence": [
+        "evidence/safety-correctness/full/db-tests.log",
+        "evidence/safety-correctness/full/db-cross-validation.log"
+      ],
+      "note": "`db doctor` left the main DB unchanged but created `index.sqlite-wal` and `index.sqlite-shm` sidecars, so the command is not side-effect free on disk."
+    },
+    {
+      "id": "VAL-CROSS-010",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/db-cross-validation.log"],
+      "note": "Offline harness showed `autoRebuildIfNeeded` returning `rebuildTriggered=true` and the rebuilt DB fingerprint matching the new config dimensions."
+    },
+    {
+      "id": "VAL-SEARCH-001",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/safety-search-tests.log"],
+      "note": "Default search left `extensions=[]` and returned hits for both marker files."
+    },
+    {
+      "id": "VAL-SEARCH-002",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/safety-search-tests.log"],
+      "note": "`--ext TS` normalized to `.ts` and filtered results strictly by suffix."
+    },
+    {
+      "id": "VAL-AI-040",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/ai-ops-tests.log"],
+      "note": "`ai-search` propagated structured-output fallback successfully when JSON mode was rejected."
+    },
+    {
+      "id": "VAL-OPS-010",
+      "status": "pass",
+      "evidence": ["evidence/safety-correctness/full/smoke-google.log"],
+      "note": "`bun run smoke:google` ran end-to-end and exited 0; output stayed secret-safe and reported `status=passed`."
+    }
+  ],
+  "commandsRun": [
+    {
+      "command": "bun test /root/projects/nya2/tests/safety-redaction.test.ts /root/projects/nya2/tests/learn-search.test.ts",
+      "exitCode": 0,
+      "observation": "All safety/search assertions in these files passed."
+    },
+    {
+      "command": "bun test /root/projects/nya2/tests/db-doctor.test.ts /root/projects/nya2/tests/rebuild.test.ts",
+      "exitCode": 1,
+      "observation": "`db-doctor.test.ts` failed on the read-only case because `db doctor` created WAL/SHM sidecars; the rebuild assertions otherwise passed."
+    },
+    {
+      "command": "bun test /root/projects/nya2/tests/ai-search.test.ts /root/projects/nya2/tests/smoke-google.test.ts",
+      "exitCode": 0,
+      "observation": "AI search fallback and smoke-runner unit tests passed."
+    },
+    {
+      "command": "bun /tmp/nya-cli-user-testing-safety-correctness-9TwCil/validate-db-cross.ts",
+      "exitCode": 0,
+      "observation": "Validated fingerprint-mismatch doctor reporting, confirmed read-only side effects, and verified auto rebuild rewrites the fingerprint."
+    },
+    {
+      "command": "bun run smoke:google",
+      "exitCode": 0,
+      "observation": "Real smoke ran successfully with a present Google API key and did not leak the key value."
+    }
+  ],
+  "blockers": [],
+  "frictions": [
+    {
+      "description": "`db doctor` read-only verification was timing-sensitive with WAL/SHM sidecars, so I used a custom offline harness and normalized the temp sidecars before comparing hashes.",
+      "resolved": true,
+      "resolution": "Compared the main DB file hash plus read-only state before/after doctor, and then recorded the WAL/SHM sidecar creation as the failure signal.",
+      "affectedAssertions": ["VAL-DB-004", "VAL-DB-021", "VAL-CROSS-010"]
+    },
+    {
+      "description": "The initial mismatch config edit used an invalid embedding dimensionality, which caused config loading to fall back instead of reporting the mismatch.",
+      "resolved": true,
+      "resolution": "Changed the temp config to a schema-valid dimensionality (128) before rerunning the mismatch validation.",
+      "affectedAssertions": ["VAL-DB-004", "VAL-CROSS-010"]
+    }
+  ],
+  "appliedUpdates": [],
+  "smoke": {
+    "command": "bun run smoke:google",
+    "exitCode": 0,
+    "observation": "Passed end-to-end with `status=passed`; output did not contain the literal API key value."
+  },
+  "summary": "Validated 19 assertions: 18 passed and 1 failed (`VAL-DB-021`, because `db doctor` creates WAL/SHM sidecars on disk)."
+}
