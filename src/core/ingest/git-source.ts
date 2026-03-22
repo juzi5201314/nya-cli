@@ -3,7 +3,7 @@ import { basename, extname, isAbsolute, relative, resolve } from 'node:path';
 import type { ScopePaths } from '../../config/paths';
 import type { AppConfig } from '../../types/config';
 import { sha256 } from '../../utils/hash';
-import { normalizeLocatorForStorage } from '../../utils/redaction';
+import { normalizeLocatorForNetwork } from '../../utils/redaction';
 
 const BINARY_EXTENSIONS = new Set([
   '.png',
@@ -134,7 +134,7 @@ async function ensureRemoteCache(
   paths: ScopePaths
 ): Promise<string> {
   const sourceUrl = url.trim();
-  const persistedUrl = normalizeLocatorForStorage(sourceUrl);
+  const persistedUrl = normalizeLocatorForNetwork(sourceUrl);
   const cachePath = resolve(paths.remoteCacheDir, sha256(persistedUrl));
 
   try {
@@ -249,13 +249,14 @@ export async function resolveGitSource(args: {
   paths: ScopePaths;
 }): Promise<ResolvedGitSource> {
   if (isRemoteSource(args.source)) {
+    const redactedSource = normalizeLocatorForNetwork(args.source);
     const repoRoot = await ensureRemoteCache(args.source, args.paths);
     return {
       sourceKind: 'remote_git',
-      sourceKey: args.source,
-      sourceLocator: args.source,
+      sourceKey: redactedSource,
+      sourceLocator: redactedSource,
       repoRoot,
-      repoUrl: args.source,
+      repoUrl: redactedSource,
       workingPath: repoRoot,
     };
   }

@@ -16,7 +16,10 @@ const SENSITIVE_PARAM_NAMES = new Set([
 
 const URL_TOKEN_PATTERN = /(?:[a-z][a-z0-9+.-]*:\/\/)[^\s<>'"`]+/gi;
 
-function redactParams(raw: string): string {
+function redactParams(
+  raw: string,
+  options?: { redactAllValues?: boolean }
+): string {
   const params = new URLSearchParams(raw);
   const entries = [...params.entries()];
   if (entries.length === 0) {
@@ -26,12 +29,25 @@ function redactParams(raw: string): string {
   return entries
     .map(([key, value]) => {
       const normalizedKey = key.toLowerCase();
-      const renderedValue = SENSITIVE_PARAM_NAMES.has(normalizedKey)
-        ? REDACTED
-        : encodeURIComponent(value);
+      const renderedValue =
+        options?.redactAllValues || SENSITIVE_PARAM_NAMES.has(normalizedKey)
+          ? REDACTED
+          : encodeURIComponent(value);
       return `${encodeURIComponent(key)}=${renderedValue}`;
     })
     .join('&');
+}
+
+function redactFragment(raw: string): string {
+  if (!raw) {
+    return '';
+  }
+
+  if (!raw.includes('=') && !raw.includes('&')) {
+    return REDACTED;
+  }
+
+  return redactParams(raw, { redactAllValues: true });
 }
 
 function redactUrlString(
@@ -83,10 +99,10 @@ function redactUrlString(
 
     const query = queryRaw ? redactParams(queryRaw) : '';
     const fragment =
-      (options?.stripFragment ?? true)
+      (options?.stripFragment ?? false)
         ? ''
         : fragmentRaw
-          ? redactParams(fragmentRaw)
+          ? redactFragment(fragmentRaw)
           : '';
 
     return [
@@ -98,13 +114,13 @@ function redactUrlString(
     ].join('');
   }
 
-  const stripFragment = options?.stripFragment ?? true;
+  const stripFragment = options?.stripFragment ?? false;
   const hasUserInfo = Boolean(url.username || url.password);
   const query = url.search ? redactParams(url.search.slice(1)) : '';
   const fragment = stripFragment
     ? ''
     : url.hash
-      ? redactParams(url.hash.slice(1))
+      ? redactFragment(url.hash.slice(1))
       : '';
 
   return [
@@ -128,6 +144,10 @@ export function normalizeLocatorForStorage(
 ): string {
   const redacted = redactUrlString(value, options);
   return redacted ?? value;
+}
+
+export function normalizeLocatorForNetwork(value: string): string {
+  return normalizeLocatorForStorage(value, { stripFragment: false });
 }
 
 export function redactText(value: string): string {

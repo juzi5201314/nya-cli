@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { z } from 'zod';
 import { printOutput } from '../src/commands/shared';
@@ -274,6 +274,28 @@ async function runGit(cwd: string, args: string[]): Promise<void> {
   }
 }
 
+async function readTextTree(root: string): Promise<string> {
+  const chunks: string[] = [];
+
+  async function walk(current: string): Promise<void> {
+    const entries = await readdir(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) {
+        await walk(path);
+        continue;
+      }
+
+      if (entry.isFile()) {
+        chunks.push(await readFile(path, 'utf8'));
+      }
+    }
+  }
+
+  await walk(root);
+  return chunks.join('\n');
+}
+
 async function captureConsoleOutput(fn: () => Promise<void> | void): Promise<{
   stdout: string;
   stderr: string;
@@ -321,6 +343,7 @@ describe('secret redaction and at-rest hygiene', () => {
     expect(captured.stdout).not.toContain('very-secret');
     expect(captured.stdout).not.toContain('query-secret-123');
     expect(captured.stdout).not.toContain('fragment-secret-456');
+    expect(captured.stdout).toContain('#sig=[REDACTED]');
     expect(captured.stdout).toContain('[REDACTED]');
   });
 
@@ -484,16 +507,17 @@ describe('secret redaction and at-rest hygiene', () => {
     expect(manifestText).not.toContain('git-secret');
     expect(documentText).not.toContain('git-secret');
 
+    const cacheRoot = join(
+      cacheDir,
+      sha256(normalizeLocatorForStorage(sourceUrl))
+    );
     const cacheConfig = await readFile(
-      join(
-        cacheDir,
-        sha256(normalizeLocatorForStorage(sourceUrl)),
-        '.git',
-        'config'
-      ),
+      join(cacheRoot, '.git', 'config'),
       'utf8'
     );
+    const cacheLogs = await readTextTree(join(cacheRoot, '.git', 'logs'));
     expect(cacheConfig).not.toContain('git-secret');
+    expect(cacheLogs).not.toContain('git-secret');
     expect(cacheConfig).toContain('[REDACTED]');
 
     closeDatabase(db);
