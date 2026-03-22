@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# A tiny fake Crawl4AI CLI for tests.
+# It supports:
+# - crwl --help
+# - crwl crawl --help
+# - crwl crawl <url> ... -o all ... [--deep-crawl bfs --max-pages N --max-depth D]
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  echo "fake crwl (tests)"
+  exit 0
+fi
+
+if [[ "${1:-}" == "crawl" && ("${2:-}" == "--help" || "${2:-}" == "-h") ]]; then
+  echo "fake crwl crawl (tests)"
+  exit 0
+fi
+
+if [[ "${1:-}" != "crawl" ]]; then
+  echo "unexpected command: $*" 1>&2
+  exit 2
+fi
+
+url="${2:-}"
+if [[ -z "${url}" ]]; then
+  echo "missing url" 1>&2
+  exit 2
+fi
+
+deep="0"
+for arg in "$@"; do
+  if [[ "${arg}" == "--deep-crawl" ]]; then
+    deep="1"
+  fi
+done
+
+base="${url}"
+if [[ "${base}" != */ ]]; then
+  base="${base}/"
+fi
+
+root_url="${url%%#*}"
+child_url="${base}guide"
+
+root_md="# Docs\n\nThis is a deterministic fake Crawl4AI markdown output for tests. Tavily and Gemini help agents crawl docs.\n"
+child_md="# Guide\n\nSecond page content for deep crawl tests. It also mentions agents and crawl.\n"
+
+if [[ "${deep}" == "1" ]]; then
+  cat <<JSON
+[
+  {
+    "url": "${root_url}",
+    "metadata": {"title": "Docs", "status": 200, "url": "${root_url}"},
+    "markdown": {"raw_markdown": "${root_md}", "fit_markdown": "${root_md}"},
+    "links": {
+      "internal": [
+        {"href": "${child_url}"},
+        {"href": "${base}assets/logo.png"}
+      ],
+      "external": [
+        {"href": "https://external.example.com/"}
+      ]
+    }
+  },
+  {
+    "url": "${child_url}",
+    "metadata": {"title": "Guide", "status": 200, "url": "${child_url}"},
+    "markdown": {"raw_markdown": "${child_md}", "fit_markdown": "${child_md}"},
+    "links": {"internal": [], "external": []}
+  }
+]
+JSON
+  exit 0
+fi
+
+cat <<JSON
+[
+  {
+    "url": "${root_url}",
+    "metadata": {"title": "Docs", "status": 200, "url": "${root_url}"},
+    "markdown": {"raw_markdown": "${root_md}", "fit_markdown": "${root_md}"},
+    "links": {"internal": [{"href": "${child_url}"}], "external": []}
+  }
+]
+JSON

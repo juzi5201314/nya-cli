@@ -48,7 +48,7 @@
 
 ### `web.ingest`
 
-- 当前支持 `scrapling`、`cloudflare`
+- 当前支持 `crawl4ai`、`cloudflare`
 - 用于网页学习 / 抓取，不用于公网搜索
 - 命令入口：`nya learn web <url>`
 
@@ -121,7 +121,7 @@ embedding fingerprint 至少包含：
 
 - 支持单页抓取与多页 crawl
 - 单页和 crawl 都会先转正文 Markdown 再进入 chunking
-- `scrapling` 负责本机抓取
+- `crawl4ai` 负责本机抓取（通过 `crwl` CLI）
 - `cloudflare` 负责 Browser Rendering / Crawl API 路径
 
 ### 本地检索

@@ -91,9 +91,9 @@ export async function runLearnWeb(args: {
 
     const ingestConfig = runtime.config.web.ingest;
     const providerConfig =
-      ingestConfig.provider === 'scrapling'
-        ? ingestConfig.providers.scrapling
-        : ingestConfig.providers.cloudflare;
+      ingestConfig.provider === 'cloudflare'
+        ? ingestConfig.providers.cloudflare
+        : ingestConfig.providers.crawl4ai;
     const result = await learnWebSource({
       source: args.source,
       config: runtime.config,

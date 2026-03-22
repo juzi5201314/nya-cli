@@ -38,7 +38,7 @@
 - Embedding：`Google`、`OpenAI`
 - LLM：`Google`、`OpenAI`
 - Web Search：`Tavily`
-- Web Ingest：`Scrapling`、`Cloudflare`
+- Web Ingest：`Crawl4AI`、`Cloudflare`
 
 ## 快速开始
 
@@ -48,9 +48,9 @@
 
 - `Bun`
 - `git`
-- `scrapling` CLI
+- `crwl`（Crawl4AI CLI）
 
-如果你要使用 `learn web` 的动态抓取模式，`scrapling fetch` 还依赖它自己的浏览器环境。
+如果你要使用 `learn web` 的动态抓取模式（`--fetch-mode fetch`），Crawl4AI 还依赖 Playwright 浏览器环境。
 
 ### 2. 安装依赖
 
@@ -58,18 +58,25 @@
 bun install
 ```
 
-### 3. 安装 Scrapling
+### 3. 安装 Crawl4AI
 
-如果机器上还没有 `scrapling`：
+如果机器上还没有 Crawl4AI：
 
 ```bash
-uv tool install scrapling
+python -m pip install -U crawl4ai
+```
+
+完成首次初始化（安装 Playwright 浏览器等）：
+
+```bash
+crawl4ai-setup
 ```
 
 确认可执行：
 
 ```bash
-scrapling --help
+crwl --help
+crawl4ai-doctor
 ```
 
 ### 4. 配置密钥
@@ -104,7 +111,7 @@ CLOUDFLARE_API_TOKEN=...
 
 说明：
 
-- `web.ingest.provider` 支持 `scrapling`（本机抓取）与 `cloudflare`（单页走 Cloudflare Browser Rendering `/markdown`，多页 `--crawl` 走 `/crawl`）。
+- `web.ingest.provider` 支持 `crawl4ai`（本机抓取，调用 `crwl` CLI）与 `cloudflare`（单页走 Cloudflare Browser Rendering `/markdown`，多页 `--crawl` 走 `/crawl`）。
 - 使用 `cloudflare` 时，需要在 `nya.toml` 中配置 `[web.ingest.providers.cloudflare].account_id`，并在环境变量中提供 `CLOUDFLARE_API_TOKEN`。
 - Cloudflare Free 的 `/crawl` 每天只有少量 job 配额；如果只是学习单页，当前实现不会再消耗 `/crawl` job。
 
@@ -544,38 +551,46 @@ nya db clear --project --yes
 
 ## 故障排查
 
-### 1. `scrapling` 不存在
+### 1. `crwl` 不存在
 
 典型报错：
 
 ```text
-未检测到可用的 scrapling CLI。请先安装 Scrapling CLI。
+未检测到可用的 Crawl4AI CLI（crwl）。
 ```
 
 处理方式：
 
 ```bash
-uv tool install scrapling
-scrapling --help
+python -m pip install -U crawl4ai
+crawl4ai-setup
+crwl --help
+crawl4ai-doctor
 ```
 
-### 2. `scrapling fetch` 找不到浏览器
+### 2. Crawl4AI 找不到浏览器
 
 典型报错会包含：
 
 ```text
 Playwright ... Executable doesn't exist ...
-playwright install
+python -m playwright install --with-deps chromium
 ```
 
 原因：
 
-- `scrapling fetch` 依赖 Playwright 浏览器二进制
-- 你安装了 Scrapling，但还没有把浏览器装好
+- Crawl4AI 依赖 Playwright 浏览器二进制
+- 你安装了 Crawl4AI，但还没有把浏览器装好（或还没运行 `crawl4ai-setup`）
 
 处理方式：
 
-先安装 Playwright 浏览器依赖，再重试 `learn web --fetch-mode fetch`。
+优先运行一次：
+
+```bash
+crawl4ai-setup
+```
+
+或者手动安装 Playwright 浏览器依赖，再重试 `learn web --fetch-mode fetch`。
 
 如果当前页面用 `get` 就够用，也可以先继续使用：
 

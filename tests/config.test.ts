@@ -18,19 +18,17 @@ default_topic = "general"
 default_search_depth = "basic"
 
 [web.ingest]
-provider = "scrapling"
+provider = "crawl4ai"
 
-[web.ingest.providers.scrapling]
-command = "scrapling"
+[web.ingest.providers.crawl4ai]
+command = "crwl"
 default_fetch_mode = "auto"
 default_crawl = false
 default_max_pages = 25
 default_max_depth = 2
-same_origin_only = true
 min_markdown_chars = 200
-get_timeout_seconds = 30
-fetch_timeout_ms = 30000
-fetch_wait_ms = 0
+get_page_timeout_ms = 30000
+fetch_page_timeout_ms = 60000
 
 [embedding]
 provider = "google"
@@ -78,7 +76,7 @@ max_file_bytes = 262144
     const result = appConfigSchema.parse(parsed);
     expect(result.embedding.provider).toBe('google');
     expect(result.web.search.provider).toBe('tavily');
-    expect(result.web.ingest.provider).toBe('scrapling');
+    expect(result.web.ingest.provider).toBe('crawl4ai');
     expect(result.ai_search.max_steps).toBe(3);
     expect(result.index.chunking_version).toBe('v1');
   });

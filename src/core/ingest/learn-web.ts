@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import { extname } from 'node:path';
+import { dirname, extname } from 'node:path';
 
 import type { ScopePaths } from '../../config/paths';
 import {
@@ -38,6 +38,99 @@ function normalizeUrl(url: string): string {
 
 function sameOrigin(left: string, right: string): boolean {
   return new URL(left).origin === new URL(right).origin;
+}
+
+function computeWebCrawlScope(rootUrl: string): {
+  origin: string;
+  rootPath: string;
+  pathPrefix: string;
+} {
+  const root = new URL(normalizeUrl(rootUrl));
+  const rootPath = root.pathname || '/';
+  const pathPrefix = rootPath.endsWith('/')
+    ? rootPath
+    : extname(rootPath)
+      ? `${dirname(rootPath).replace(/\/+$/, '')}/`
+      : `${rootPath}/`;
+  return {
+    origin: root.origin,
+    rootPath,
+    pathPrefix,
+  };
+}
+
+function hasNonHtmlExtension(pathname: string): boolean {
+  const ext = extname(pathname).toLowerCase();
+  if (!ext) {
+    return false;
+  }
+
+  // 常见非 HTML 资源，默认不纳入 crawl
+  return new Set([
+    '.png',
+    '.jpg',
+    '.jpeg',
+    '.gif',
+    '.svg',
+    '.webp',
+    '.ico',
+    '.css',
+    '.js',
+    '.mjs',
+    '.cjs',
+    '.map',
+    '.json',
+    '.xml',
+    '.pdf',
+    '.zip',
+    '.gz',
+    '.tgz',
+    '.tar',
+    '.rar',
+    '.7z',
+    '.woff',
+    '.woff2',
+    '.ttf',
+    '.otf',
+    '.eot',
+    '.mp4',
+    '.webm',
+    '.mp3',
+    '.wav',
+  ]).has(ext);
+}
+
+function isNoisePath(pathname: string): boolean {
+  const lower = pathname.toLowerCase();
+  if (lower === '/robots.txt' || lower === '/sitemap.xml') {
+    return true;
+  }
+  return (
+    lower.startsWith('/assets/') ||
+    lower.startsWith('/static/') ||
+    lower.startsWith('/img/') ||
+    lower.startsWith('/images/') ||
+    lower.startsWith('/_next/') ||
+    lower.startsWith('/favicon')
+  );
+}
+
+function isUrlInScope(args: {
+  rootUrl: string;
+  candidateUrl: string;
+}): boolean {
+  const scope = computeWebCrawlScope(args.rootUrl);
+  const candidate = new URL(args.candidateUrl);
+  if (candidate.origin !== scope.origin) {
+    return false;
+  }
+
+  if (scope.pathPrefix === '/') {
+    return true;
+  }
+
+  const pathname = candidate.pathname || '/';
+  return pathname === scope.rootPath || pathname.startsWith(scope.pathPrefix);
 }
 
 function toChunkPath(url: string): string {
@@ -150,10 +243,18 @@ async function collectPages(args: {
 
     for (const link of page.links) {
       const normalizedLink = normalizeUrl(link);
+      // provider 无关的 scope 限制：同源 + pathPrefix
+      if (!sameOrigin(args.rootUrl, normalizedLink)) {
+        continue;
+      }
       if (
-        args.config.web.ingest.providers.scrapling.same_origin_only &&
-        !sameOrigin(args.rootUrl, normalizedLink)
+        !isUrlInScope({ rootUrl: args.rootUrl, candidateUrl: normalizedLink })
       ) {
+        continue;
+      }
+
+      const candidatePath = new URL(normalizedLink).pathname || '/';
+      if (hasNonHtmlExtension(candidatePath) || isNoisePath(candidatePath)) {
         continue;
       }
       if (visited.has(normalizedLink)) {

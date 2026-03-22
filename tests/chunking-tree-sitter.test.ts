@@ -24,19 +24,17 @@ const config: AppConfig = {
       },
     },
     ingest: {
-      provider: 'scrapling',
+      provider: 'crawl4ai',
       providers: {
-        scrapling: {
-          command: 'scrapling',
+        crawl4ai: {
+          command: 'crwl',
           default_fetch_mode: 'auto',
           default_crawl: false,
           default_max_pages: 25,
           default_max_depth: 2,
-          same_origin_only: true,
           min_markdown_chars: 200,
-          get_timeout_seconds: 30,
-          fetch_timeout_ms: 30000,
-          fetch_wait_ms: 0,
+          get_page_timeout_ms: 30000,
+          fetch_page_timeout_ms: 60000,
           rpm: 0,
           tpm: 0,
           retry_max_retries: 3,

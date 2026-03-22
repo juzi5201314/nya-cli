@@ -20,6 +20,8 @@ import type { AppConfig } from '../src/types/config';
 
 const tempRoot = '/tmp/nya-cli-get-tests';
 
+const cliEntrypoint = join(import.meta.dir, '..', 'src', 'index.ts');
+
 const config: AppConfig = {
   app: {
     default_output: 'text',
@@ -41,19 +43,17 @@ const config: AppConfig = {
       },
     },
     ingest: {
-      provider: 'scrapling',
+      provider: 'crawl4ai',
       providers: {
-        scrapling: {
-          command: 'scrapling',
+        crawl4ai: {
+          command: 'crwl',
           default_fetch_mode: 'auto',
           default_crawl: false,
           default_max_pages: 25,
           default_max_depth: 2,
-          same_origin_only: true,
           min_markdown_chars: 40,
-          get_timeout_seconds: 30,
-          fetch_timeout_ms: 30000,
-          fetch_wait_ms: 0,
+          get_page_timeout_ms: 30000,
+          fetch_page_timeout_ms: 60000,
           rpm: 0,
           tpm: 0,
           retry_max_retries: 3,
@@ -313,15 +313,7 @@ describe('get document', () => {
     closeDatabase(db);
 
     const proc = Bun.spawn(
-      [
-        'bun',
-        'run',
-        '/home/soeur/project/nya-cli/src/index.ts',
-        'get',
-        'guide.ts',
-        '--project',
-        '--json',
-      ],
+      ['bun', 'run', cliEntrypoint, 'get', 'guide.ts', '--project', '--json'],
       {
         cwd: projectDir,
         stdout: 'pipe',

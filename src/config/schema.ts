@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const outputFormatSchema = z.enum(['text', 'json']);
 const webSearchProviderSchema = z.enum(['tavily']);
-const webIngestProviderSchema = z.enum(['scrapling', 'cloudflare']);
+const webIngestProviderSchema = z.enum(['crawl4ai', 'cloudflare']);
 const embeddingProviderSchema = z.enum(['google', 'openai']);
 const llmProviderSchema = z.enum(['google', 'openai']);
 const rerankProviderSchema = z.enum(['none']);
@@ -45,39 +45,42 @@ export const appConfigSchema = z.object({
       }),
     }),
     ingest: z.object({
-      provider: webIngestProviderSchema.default('scrapling'),
+      provider: webIngestProviderSchema.default('crawl4ai'),
       providers: z.object({
-        scrapling: z
+        crawl4ai: z
           .object({
-            command: z.string().min(1).default('scrapling'),
+            // Crawl4AI CLI command name, usually `crwl`
+            command: z.string().min(1).default('crwl'),
             default_fetch_mode: webFetchModeSchema.default('auto'),
             default_crawl: z.boolean().default(false),
             default_max_pages: z.number().int().min(1).max(500).default(25),
             default_max_depth: z.number().int().min(0).max(10).default(2),
-            same_origin_only: z.boolean().default(true),
             min_markdown_chars: z.number().int().min(1).default(200),
-            get_timeout_seconds: z.number().int().min(1).max(300).default(30),
-            fetch_timeout_ms: z
+            // Used for CrawlerRunConfig.page_timeout
+            get_page_timeout_ms: z
               .number()
               .int()
               .min(1000)
               .max(300000)
               .default(30000),
-            fetch_wait_ms: z.number().int().min(0).max(120000).default(0),
+            fetch_page_timeout_ms: z
+              .number()
+              .int()
+              .min(1000)
+              .max(300000)
+              .default(60000),
             ...rateLimitFields,
             ...retryFields,
           })
           .default({
-            command: 'scrapling',
+            command: 'crwl',
             default_fetch_mode: 'auto',
             default_crawl: false,
             default_max_pages: 25,
             default_max_depth: 2,
-            same_origin_only: true,
             min_markdown_chars: 200,
-            get_timeout_seconds: 30,
-            fetch_timeout_ms: 30000,
-            fetch_wait_ms: 0,
+            get_page_timeout_ms: 30000,
+            fetch_page_timeout_ms: 60000,
             rpm: 0,
             tpm: 0,
             retry_max_retries: 3,

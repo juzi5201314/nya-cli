@@ -18,6 +18,10 @@ import type { AppConfig } from '../src/types/config';
 
 const tempRoot = '/tmp/nya-cli-web-tests';
 
+// Ensure the fake `crwl` fixture is preferred over any system-installed `crwl`.
+const fixtureBin = join(import.meta.dir, 'fixtures', 'bin');
+process.env.PATH = `${fixtureBin}:${process.env.PATH ?? ''}`;
+
 const config: AppConfig = {
   app: {
     default_output: 'text',
@@ -39,19 +43,17 @@ const config: AppConfig = {
       },
     },
     ingest: {
-      provider: 'scrapling',
+      provider: 'crawl4ai',
       providers: {
-        scrapling: {
-          command: 'scrapling',
+        crawl4ai: {
+          command: 'crwl',
           default_fetch_mode: 'auto',
           default_crawl: false,
           default_max_pages: 10,
           default_max_depth: 1,
-          same_origin_only: true,
           min_markdown_chars: 20,
-          get_timeout_seconds: 30,
-          fetch_timeout_ms: 30000,
-          fetch_wait_ms: 0,
+          get_page_timeout_ms: 30000,
+          fetch_page_timeout_ms: 60000,
           rpm: 0,
           tpm: 0,
           retry_max_retries: 3,
@@ -186,7 +188,7 @@ beforeEach(async () => {
 });
 
 describe('learn web', () => {
-  test('learns a single page with scrapling', async () => {
+  test('learns a single page with crawl4ai', async () => {
     const db = await openDatabase(join(tempRoot, 'index.sqlite'));
     const provider = new FakeEmbeddingProvider();
     initializeEmptyIndex(

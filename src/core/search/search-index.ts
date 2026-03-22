@@ -46,7 +46,9 @@ export function normalizeSearchExtensions(
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean)
     .map((value) => (value.startsWith('.') ? value : `.${value}`))
-    .filter((value) => value !== '.' && !value.includes('/') && !value.includes('\\'));
+    .filter(
+      (value) => value !== '.' && !value.includes('/') && !value.includes('\\')
+    );
 
   return [...new Set(normalized)];
 }
