@@ -30,6 +30,24 @@ export function compactSearchText(value: string): string {
   return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildLooseIdentifierPattern(value: string): RegExp | null {
+  const compact = compactSearchText(value);
+  if (compact.length < 2) {
+    return null;
+  }
+
+  const pattern = compact
+    .split('')
+    .map((character) => escapeRegExp(character))
+    .join('[^\\p{L}\\p{N}]*');
+
+  return new RegExp(pattern, 'iu');
+}
+
 function findSnippetAnchor(content: string, query: string): number {
   const normalizedQuery = query.trim().toLowerCase();
   if (normalizedQuery.length >= 2) {
@@ -39,17 +57,30 @@ function findSnippetAnchor(content: string, query: string): number {
     }
   }
 
+  const looseQueryPattern = buildLooseIdentifierPattern(query.trim());
+  if (looseQueryPattern) {
+    const queryMatch = looseQueryPattern.exec(content);
+    if (queryMatch?.index !== undefined) {
+      return queryMatch.index;
+    }
+  }
+
   for (const term of extractSearchTerms(query).sort(
     (left, right) => right.length - left.length
   )) {
-    const termIndex = compactSearchText(content).indexOf(term);
-    if (termIndex >= 0) {
-      const originalIndex = content
-        .toLowerCase()
-        .indexOf(term.length >= 2 ? term : query.trim().toLowerCase());
-      if (originalIndex >= 0) {
-        return originalIndex;
-      }
+    const exactIndex = content.toLowerCase().indexOf(term);
+    if (exactIndex >= 0) {
+      return exactIndex;
+    }
+
+    const loosePattern = buildLooseIdentifierPattern(term);
+    if (!loosePattern) {
+      continue;
+    }
+
+    const termMatch = loosePattern.exec(content);
+    if (termMatch?.index !== undefined) {
+      return termMatch.index;
     }
   }
 

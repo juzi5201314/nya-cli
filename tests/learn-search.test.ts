@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { chunkTextDocument } from '../src/core/chunking/chunk-text';
 import { learnGitSource } from '../src/core/ingest/learn-git';
 import {
   normalizeSearchExtensions,
@@ -520,6 +521,62 @@ describe('learn and search', () => {
     closeDatabase(db);
   });
 
+  test('anchors snippets around punctuated identifier matches', async () => {
+    const dbDir = join(tempRoot, 'db');
+    const dbPath = join(dbDir, 'index.sqlite');
+    const db = await openDatabase(dbPath);
+    const provider = new FakeEmbeddingProvider();
+
+    initializeEmptyIndex(
+      db,
+      provider.fingerprint(baseConfig.index.chunking_version)
+    );
+
+    replaceSourceData({
+      db,
+      sourceKey: 'repo',
+      documents: [
+        {
+          document: {
+            sourceKey: 'repo',
+            sourceKind: 'local_git',
+            sourceLocator: '/repo',
+            canonicalLocator: null,
+            path: 'src/search-index.ts',
+            language: 'ts',
+            title: 'search-index.ts',
+            contentHash: 'doc-snippet-1',
+            content: `${'search '.repeat(50)}the search-index.ts helper keeps the indexed symbol near the end.`,
+          },
+          chunks: [
+            {
+              chunkIndex: 0,
+              section: 'search-index.ts',
+              content: `${'search '.repeat(50)}the search-index.ts helper keeps the indexed symbol near the end.`,
+              tokenEstimate: 90,
+              contentHash: 'chunk-snippet-1',
+            },
+          ],
+          embedding: [[10, 10, 0, 0]],
+        },
+      ],
+    });
+
+    const searchResult = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'searchIndex',
+      limit: 5,
+      scope: 'project',
+      databasePath: dbPath,
+    });
+
+    expect(searchResult.results[0]?.snippet).toContain('search-index.ts');
+    expect(searchResult.results[0]?.snippet.startsWith('…')).toBe(true);
+
+    closeDatabase(db);
+  });
+
   test('filters search results by explicit file suffixes', async () => {
     const dbDir = join(tempRoot, 'db');
     const dbPath = join(dbDir, 'index.sqlite');
@@ -669,6 +726,30 @@ describe('learn and search', () => {
     expect(normalized).toEqual(['.ts', '.md']);
 
     closeDatabase(db);
+  });
+
+  test('labels code chunks with symbol names', async () => {
+    const chunks = await chunkTextDocument({
+      filePath: 'src/example.ts',
+      content: [
+        'export function firstFeature() {',
+        '  const label = "first";',
+        '  return label.repeat(2);',
+        '}',
+        '',
+        'export function secondFeature() {',
+        '  const label = "second";',
+        '  return label.repeat(3);',
+        '}',
+      ].join('\n'),
+      config: baseConfig,
+    });
+
+    expect(chunks).toHaveLength(2);
+    expect(chunks.map((chunk) => chunk.section)).toEqual([
+      'example.ts · firstFeature',
+      'example.ts · secondFeature',
+    ]);
   });
 
   test('dedupes shared hits across retrievers and reports hybrid usage', async () => {
@@ -966,6 +1047,87 @@ describe('learn and search', () => {
     expect(firstRun.results[0]?.documentId).toBeLessThan(
       firstRun.results[1]?.documentId ?? 0
     );
+
+    closeDatabase(db);
+  });
+
+  test('orders fallback matches by relevance instead of insertion order', async () => {
+    const dbDir = join(tempRoot, 'db');
+    const dbPath = join(dbDir, 'index.sqlite');
+    const db = await openDatabase(dbPath);
+    const provider = new FakeEmbeddingProvider();
+
+    initializeEmptyIndex(
+      db,
+      provider.fingerprint(baseConfig.index.chunking_version)
+    );
+
+    replaceSourceData({
+      db,
+      sourceKey: 'repo',
+      documents: [
+        {
+          document: {
+            sourceKey: 'repo',
+            sourceKind: 'local_git',
+            sourceLocator: '/repo',
+            canonicalLocator: null,
+            path: 'docs/early.md',
+            language: 'md',
+            title: 'early.md',
+            contentHash: 'doc-early',
+            content: 'alpha something else beta',
+          },
+          chunks: [
+            {
+              chunkIndex: 0,
+              section: 'early.md',
+              content: 'alpha something else beta',
+              tokenEstimate: 10,
+              contentHash: 'chunk-early',
+            },
+          ],
+          embedding: [[0, 0, 0, 0]],
+        },
+        {
+          document: {
+            sourceKey: 'repo',
+            sourceKind: 'local_git',
+            sourceLocator: '/repo',
+            canonicalLocator: null,
+            path: 'docs/later.md',
+            language: 'md',
+            title: 'later.md',
+            contentHash: 'doc-later',
+            content: 'alpha beta details are here',
+          },
+          chunks: [
+            {
+              chunkIndex: 0,
+              section: 'later.md',
+              content: 'alpha beta details are here',
+              tokenEstimate: 10,
+              contentHash: 'chunk-later',
+            },
+          ],
+          embedding: [[0, 0, 0, 0]],
+        },
+      ],
+    });
+
+    const searchResult = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'alpha beta',
+      limit: 2,
+      scope: 'project',
+      databasePath: dbPath,
+    });
+
+    expect(searchResult.results.map((item) => item.path)).toEqual([
+      'docs/later.md',
+      'docs/early.md',
+    ]);
 
     closeDatabase(db);
   });

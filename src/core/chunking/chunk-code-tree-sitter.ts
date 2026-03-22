@@ -75,6 +75,125 @@ function normalizeCodeContent(value: string): string {
     .replace(/(?:\n[ \t]*)+$/, '');
 }
 
+const SYMBOL_NODE_TYPES = new Set([
+  'class',
+  'class_declaration',
+  'class_definition',
+  'class_specifier',
+  'constructor_declaration',
+  'destructor_declaration',
+  'enum',
+  'enum_declaration',
+  'enum_item',
+  'enum_specifier',
+  'function',
+  'function_declaration',
+  'function_definition',
+  'function_item',
+  'interface',
+  'interface_declaration',
+  'impl_item',
+  'method',
+  'method_declaration',
+  'method_definition',
+  'mod_item',
+  'module',
+  'module_declaration',
+  'namespace',
+  'namespace_definition',
+  'procedure',
+  'record_declaration',
+  'struct',
+  'struct_item',
+  'struct_specifier',
+  'subroutine_definition',
+  'trait_item',
+  'type_alias_declaration',
+  'type_declaration',
+]);
+
+function composeSectionLabel(filePath: string, symbolParts: string[]): string {
+  return symbolParts.length > 0
+    ? `${basename(filePath)} · ${symbolParts.join(' · ')}`
+    : basename(filePath);
+}
+
+function readNodeLabel(
+  node: Node | null | undefined,
+  sourceBytes: Uint8Array
+): string | null {
+  if (!node) {
+    return null;
+  }
+
+  const normalized = normalizeCodeContent(
+    extractRangeText(sourceBytes, node.startIndex, node.endIndex)
+  );
+  if (!normalized) {
+    return null;
+  }
+
+  const tokens = normalized.match(/[\p{L}\p{N}_$]+/gu) ?? [];
+  if (tokens.length === 0) {
+    return null;
+  }
+
+  return tokens[tokens.length - 1] ?? null;
+}
+
+function extractDirectSymbolName(
+  node: Node,
+  sourceBytes: Uint8Array
+): string | null {
+  if (!SYMBOL_NODE_TYPES.has(node.type)) {
+    return null;
+  }
+
+  const fieldNames = [
+    'name',
+    'identifier',
+    'declarator',
+    'pattern',
+    'property',
+    'signature',
+    'type',
+    'value',
+  ];
+
+  for (const fieldName of fieldNames) {
+    const fieldNode = node.childForFieldName(fieldName);
+    const label = readNodeLabel(fieldNode, sourceBytes);
+    if (label) {
+      return label;
+    }
+  }
+
+  return readNodeLabel(node, sourceBytes);
+}
+
+function extractSymbolName(node: Node, sourceBytes: Uint8Array): string | null {
+  const direct = extractDirectSymbolName(node, sourceBytes);
+  if (direct) {
+    return direct;
+  }
+
+  const symbolChild = node.namedChildren.find(
+    (child) => extractDirectSymbolName(child, sourceBytes) !== null
+  );
+  if (symbolChild) {
+    return extractDirectSymbolName(symbolChild, sourceBytes);
+  }
+
+  if (node.namedChildren.length === 1) {
+    const onlyChild = node.namedChildren[0];
+    if (onlyChild) {
+      return extractSymbolName(onlyChild, sourceBytes);
+    }
+  }
+
+  return null;
+}
+
 function resolveLanguageId(filePath: string): string | null {
   const extension = extname(filePath).toLowerCase();
   if (!extension) {
@@ -295,10 +414,20 @@ function materializeGroups(args: {
   node: Node;
   content: string;
   sourceBytes: Uint8Array;
+  filePath: string;
+  sectionParts: string[];
   section: string;
   chunkSize: number;
 }): ChunkedDocument[] {
-  const { node, content, sourceBytes, section, chunkSize } = args;
+  const {
+    node,
+    content,
+    sourceBytes,
+    filePath,
+    sectionParts,
+    section,
+    chunkSize,
+  } = args;
   const children = node.namedChildren.filter(
     (child) => child.endIndex > child.startIndex
   );
@@ -370,6 +499,14 @@ function materializeGroups(args: {
       nextStart
     );
     const firstChild = group.children[0];
+    const groupSymbolName =
+      group.children.length === 1 && firstChild
+        ? extractSymbolName(firstChild, sourceBytes)
+        : null;
+    const groupSectionParts = groupSymbolName
+      ? [...sectionParts, groupSymbolName]
+      : sectionParts;
+    const groupSection = composeSectionLabel(filePath, groupSectionParts);
 
     if (
       group.children.length === 1 &&
@@ -381,7 +518,8 @@ function materializeGroups(args: {
           node: firstChild,
           content,
           sourceBytes,
-          section,
+          filePath,
+          sectionParts,
           chunkSize,
         })
       );
@@ -391,7 +529,7 @@ function materializeGroups(args: {
     appendContentAsChunks({
       chunks,
       content: expandedSource,
-      section,
+      section: groupSection,
       chunkSize,
     });
   }
@@ -403,7 +541,8 @@ function splitNode(args: {
   node: Node;
   content: string;
   sourceBytes: Uint8Array;
-  section: string;
+  filePath: string;
+  sectionParts: string[];
   chunkSize: number;
 }): ChunkedDocument[] {
   const content = extractRangeText(
@@ -411,12 +550,21 @@ function splitNode(args: {
     args.node.startIndex,
     args.node.endIndex
   );
+  const symbolName = extractSymbolName(args.node, args.sourceBytes);
+  const sectionParts = symbolName
+    ? [...args.sectionParts, symbolName]
+    : args.sectionParts;
+  const section = composeSectionLabel(args.filePath, sectionParts);
   if (normalizeCodeContent(content).length <= args.chunkSize) {
-    const chunk = toChunk(content, args.section);
+    const chunk = toChunk(content, section);
     return chunk ? [chunk] : [];
   }
 
-  return materializeGroups(args);
+  return materializeGroups({
+    ...args,
+    sectionParts,
+    section,
+  });
 }
 
 export async function chunkCodeWithTreeSitter(args: {
@@ -448,7 +596,8 @@ export async function chunkCodeWithTreeSitter(args: {
       node: tree.rootNode,
       content: normalized,
       sourceBytes,
-      section: basename(args.filePath),
+      filePath: args.filePath,
+      sectionParts: [],
       chunkSize: args.config.index.chunk_size,
     });
   } finally {

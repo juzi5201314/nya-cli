@@ -1071,6 +1071,10 @@ export function searchFts(
   }));
 }
 
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, '\\$&');
+}
+
 export function searchLike(
   db: Database,
   query: string,
@@ -1089,9 +1093,14 @@ export function searchLike(
   const uniqueTokens = [
     ...new Set(tokens.map((token) => token.toLowerCase())),
   ].slice(0, 8);
-  const suffixOffset = uniqueTokens.length + 1;
+  const normalizedQuery = query.trim().toLowerCase();
+  const exactQueryPattern =
+    normalizedQuery.length >= 2
+      ? `%${escapeLikePattern(normalizedQuery)}%`
+      : null;
+  const suffixOffset = uniqueTokens.length + (exactQueryPattern ? 2 : 1);
   const conditions = uniqueTokens
-    .map((_, index) => `LOWER(chunks.content) LIKE ?${index + 1}`)
+    .map((_, index) => `LOWER(chunks.content) LIKE ?${index + 1} ESCAPE '\\'`)
     .join(' OR ');
   const suffixClause =
     pathSuffixes.length > 0
@@ -1104,17 +1113,30 @@ export function searchLike(
       : '';
   const statement = db.query<{ chunkId: number }, string[]>(
     `
-      SELECT chunks.id AS chunkId
+      SELECT
+        chunks.id AS chunkId,
+        (
+          ${
+            uniqueTokens
+              .map(
+                (_, index) =>
+                  `CASE WHEN LOWER(chunks.content) LIKE ?${index + 1} ESCAPE '\\' THEN 1 ELSE 0 END`
+              )
+              .join(' + ') || '0'
+          }
+          ${exactQueryPattern ? ` + CASE WHEN LOWER(chunks.content) LIKE ?${uniqueTokens.length + 1} ESCAPE '\\' THEN 100 ELSE 0 END` : ''}
+        ) AS quality
       FROM chunks
       JOIN documents ON documents.id = chunks.document_id
       WHERE ${conditions}
       ${suffixClause}
-      ORDER BY chunks.id
+      ORDER BY quality DESC, chunks.id ASC
       LIMIT ${limit}
     `
   );
   const rows = statement.all(
-    ...uniqueTokens.map((token) => `%${token}%`),
+    ...uniqueTokens.map((token) => `%${escapeLikePattern(token)}%`),
+    ...(exactQueryPattern ? [exactQueryPattern] : []),
     ...pathSuffixes
   );
 
@@ -1139,13 +1161,19 @@ export function searchMetadataLike(
     return [];
   }
 
+  const normalizedQuery = query.trim().toLowerCase();
+  const exactQueryPattern =
+    normalizedQuery.length >= 2
+      ? `%${escapeLikePattern(normalizedQuery)}%`
+      : null;
+
   const placeholders = tokens
     .map(
       (_, index) =>
-        `(LOWER(documents.path) LIKE ?${index + 1} OR LOWER(chunks.section) LIKE ?${index + 1})`
+        `(LOWER(documents.path) LIKE ?${index + 1} ESCAPE '\\' OR LOWER(chunks.section) LIKE ?${index + 1} ESCAPE '\\')`
     )
     .join(' OR ');
-  const suffixOffset = tokens.length + 1;
+  const suffixOffset = tokens.length + (exactQueryPattern ? 2 : 1);
   const suffixClause =
     pathSuffixes.length > 0
       ? ` AND (${pathSuffixes
@@ -1158,17 +1186,30 @@ export function searchMetadataLike(
 
   const statement = db.query<{ chunkId: number }, string[]>(
     `
-      SELECT chunks.id AS chunkId
+      SELECT
+        chunks.id AS chunkId,
+        (
+          ${
+            tokens
+              .map(
+                (_, index) =>
+                  `CASE WHEN LOWER(documents.path) LIKE ?${index + 1} ESCAPE '\\' THEN 1 ELSE 0 END + CASE WHEN LOWER(chunks.section) LIKE ?${index + 1} ESCAPE '\\' THEN 1 ELSE 0 END`
+              )
+              .join(' + ') || '0'
+          }
+          ${exactQueryPattern ? ` + CASE WHEN LOWER(documents.path) LIKE ?${tokens.length + 1} ESCAPE '\\' THEN 100 ELSE 0 END + CASE WHEN LOWER(chunks.section) LIKE ?${tokens.length + 1} ESCAPE '\\' THEN 80 ELSE 0 END` : ''}
+        ) AS quality
       FROM chunks
       JOIN documents ON documents.id = chunks.document_id
       WHERE ${placeholders}
       ${suffixClause}
-      ORDER BY chunks.id
+      ORDER BY quality DESC, chunks.id ASC
       LIMIT ${limit}
     `
   );
   const rows = statement.all(
-    ...tokens.map((token) => `%${token}%`),
+    ...tokens.map((token) => `%${escapeLikePattern(token)}%`),
+    ...(exactQueryPattern ? [exactQueryPattern] : []),
     ...pathSuffixes
   );
 
