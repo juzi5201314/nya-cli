@@ -1,0 +1,26 @@
+{
+  "featureId": "fix-search-vector-topn-tie-stability-before-limit",
+  "reviewedAt": "2026-03-22T14:48:02+00:00",
+  "commitId": "275273317a8be7104e6732fd1e0c6a76c359de1e",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix now applies vector suffix filtering before the vec0 LIMIT and the regression covers the tie-heavy `--ext` boundary case across repeated runs. I found no blocking code issues.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The search-worker guidance still reads like a direct SQL tie-break inside the vec0 KNN query is the intended solution, but the working fix had to use a filtered probe-and-expand fallback because vec0 did not reliably honor the inner secondary ordering. That constraint should be called out explicitly for future tie-stability work.",
+      "evidence": "`src/db/database.ts:998-1077` uses a filtered subquery plus probe-and-expand fallback instead of an inner `ORDER BY distance, chunkId`, and the handoff `skillFeedback.deviations` says the worker discovered vec0 rejected secondary `ORDER BY` keys in the KNN query."
+    },
+    {
+      "area": "knowledge",
+      "observation": "`.factory/library/search.md` is now stale: it still says vector suffix filtering happens after the inner top-N limit, but this fix moved `--ext` filtering before the vec0 LIMIT. The library should be updated to reflect the current SQL shape and tie-handling behavior.",
+      "evidence": "`/.factory/library/search.md` lines 5-8 describe the old post-LIMIT vector suffix behavior, while `src/db/database.ts:998-1077` now filters path suffixes inside the KNN query before limiting."
+    }
+  ],
+  "addressesFailureFrom": "/root/projects/nya2/.factory/validation/search-quality/scrutiny/reviews/fix-search-vector-inner-limit-tie-break.json",
+  "summary": "Pass: the vector retriever now filters `--ext` candidates before LIMIT, and the new regression covers the filtered tie-heavy boundary case with stable repeated runs."
+}

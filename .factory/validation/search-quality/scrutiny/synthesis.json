@@ -1,7 +1,7 @@
 {
   "milestone": "search-quality",
-  "round": 3,
-  "status": "fail",
+  "round": 4,
+  "status": "pass",
   "validatorsRun": {
     "test": {
       "passed": true,
@@ -20,41 +20,27 @@
     }
   },
   "reviewsSummary": {
-    "total": 5,
+    "total": 1,
     "passed": 1,
-    "failed": 4,
-    "failedFeatures": [
-      "search-hybrid-fusion-dedupe-underfill-determinism",
-      "search-snippet-section-fallback-quality",
-      "fix-search-retriever-tie-determinism",
-      "fix-search-vector-inner-limit-tie-break"
-    ]
+    "failed": 0,
+    "failedFeatures": []
   },
-  "blockingIssues": [
+  "blockingIssues": [],
+  "appliedUpdates": [
     {
-      "featureId": "fix-search-vector-inner-limit-tie-break",
-      "severity": "blocking",
-      "description": "The vector retriever still uses distance-only ordering inside the vec0 KNN subquery before the inner LIMIT, so tied candidates can drift before fallback tie-breaking runs. That leaves filtered `--ext` searches exposed to unstable top-N selection and possible underfill."
+      "target": "library",
+      "description": "Updated search notes to reflect vector suffix filtering before vec0 LIMIT and the probe-and-expand fallback for vec0 tie stability.",
+      "sourceFeature": "fix-search-vector-topn-tie-stability-before-limit"
     }
   ],
-  "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "search-worker skill",
-      "suggestion": "Add a note that sqlite-vec vec0 KNN queries may reject or ignore secondary ORDER BY keys inside the inner LIMIT. Future tie-stability fixes should verify the SQL shape first and fall back to a probe-and-expand strategy when the engine will not honor the requested inner tie-break.",
-      "evidence": "The review for fix-search-vector-inner-limit-tie-break found the worker had to abandon the requested SQL shape after vec0 rejected the secondary ORDER BY key, and the remaining blocker still lives in src/db/database.ts before the inner LIMIT.",
+      "suggestion": "Document that vec0 may ignore secondary ORDER BY keys inside KNN subqueries; future tie-stability fixes should verify the SQL shape and fall back to probe-and-expand when needed.",
+      "evidence": "The fix required changing from inner ORDER BY tie-break to a filtered probe-and-expand fallback because vec0 would not reliably honor the requested inner ordering.",
       "isSystemic": true
     }
   ],
-  "rejectedObservations": [
-    {
-      "observation": "The search-worker skill's tests-first guidance was deviated from during the feature review.",
-      "reason": "Not systemic; this was a justified one-off repro-first deviation for a pure chunker regression and does not warrant a guidance update."
-    },
-    {
-      "observation": "The retriever-ranking nuance that vector suffix filters happen after the inner LIMIT while FTS filters before LIMIT is not recorded.",
-      "reason": "Already documented in `.factory/library/search.md`, so no new update was needed."
-    }
-  ],
-  "previousRound": ".factory/validation/search-quality/scrutiny/synthesis.round2.json"
+  "rejectedObservations": [],
+  "previousRound": ".factory/validation/search-quality/scrutiny/synthesis.round3.json"
 }
