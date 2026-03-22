@@ -983,6 +983,18 @@ export function searchVector(
     return [];
   }
 
+  const compareVectorCandidates = (
+    left: { chunkId: number; distance: number },
+    right: { chunkId: number; distance: number }
+  ): number => {
+    const distanceDelta = left.distance - right.distance;
+    if (Math.abs(distanceDelta) > 1e-12) {
+      return distanceDelta;
+    }
+
+    return left.chunkId - right.chunkId;
+  };
+
   const suffixClause =
     pathSuffixes.length > 0
       ? ` AND (${pathSuffixes
@@ -990,10 +1002,16 @@ export function searchVector(
           .join(' OR ')})`
       : '';
 
-  const rows = db
-    .query<{ chunkId: number }, [Float32Array, number, ...string[]]>(
-      `
-        SELECT vec_hits.chunkId AS chunkId
+  const fetchRows = (
+    fetchLimit: number
+  ): Array<{ chunkId: number; distance: number }> => {
+    const rows = db
+      .query<
+        { chunkId: number; distance: number },
+        [Float32Array, number, ...string[]]
+      >(
+        `
+        SELECT vec_hits.chunkId AS chunkId, vec_hits.distance AS distance
         FROM (
           SELECT rowid AS chunkId, distance
           FROM chunk_vec
@@ -1005,12 +1023,38 @@ export function searchVector(
         JOIN documents ON documents.id = chunks.document_id
         WHERE 1 = 1
         ${suffixClause}
-        ORDER BY vec_hits.distance, vec_hits.chunkId
       `
-    )
-    .all(new Float32Array(embedding), limit, ...pathSuffixes);
+      )
+      .all(new Float32Array(embedding), fetchLimit, ...pathSuffixes);
 
-  return rows.map((row, index) => ({
+    return rows.map((row) => ({
+      chunkId: Number(row.chunkId),
+      distance: Number(row.distance),
+    }));
+  };
+
+  const probeLimit = Math.max(limit + 1, 1);
+  const probeRows = fetchRows(probeLimit).sort(compareVectorCandidates);
+  const previousRow = probeRows[limit - 1];
+  const nextRow = probeRows[limit];
+
+  let rows = probeRows;
+  if (
+    probeRows.length > limit &&
+    previousRow &&
+    nextRow &&
+    Math.abs(previousRow.distance - nextRow.distance) <= 1e-12
+  ) {
+    const totalRows = db
+      .query<{ count: bigint }, []>('SELECT COUNT(*) AS count FROM chunk_vec')
+      .get();
+    const fetchAllLimit = Number(totalRows?.count ?? 0n);
+    rows = fetchAllLimit > 0 ? fetchRows(fetchAllLimit) : [];
+  }
+
+  const sortedRows = rows.sort(compareVectorCandidates).slice(0, limit);
+
+  return sortedRows.map((row, index) => ({
     chunkId: Number(row.chunkId),
     rank: index + 1,
   }));

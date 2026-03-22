@@ -1164,6 +1164,63 @@ describe('learn and search', () => {
     closeDatabase(db);
   });
 
+  test('vector top-N ties stay stable across repeated searchIndex runs', async () => {
+    const dbDir = join(tempRoot, 'db');
+    const dbPath = join(dbDir, 'index.sqlite');
+    const db = await openDatabase(dbPath);
+    const provider = new TieEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      provider.fingerprint(baseConfig.index.chunking_version)
+    );
+
+    for (const index of Array.from({ length: 12 }, (_, value) => value)) {
+      const id = 100 + index;
+      seedTiedSearchRows({
+        db,
+        documentId: id,
+        chunkId: id,
+        path: `docs/tie-${String(index).padStart(2, '0')}.md`,
+        section: `tie-${id}.md`,
+        content: `vector tie document ${id}`,
+        embedding: [10, 0],
+      });
+    }
+
+    const firstVectorRun = searchVector(db, [10, 0], 2);
+    const secondVectorRun = searchVector(db, [10, 0], 2);
+
+    expect(firstVectorRun.map((row) => row.chunkId)).toEqual([100, 101]);
+    expect(secondVectorRun.map((row) => row.chunkId)).toEqual([100, 101]);
+
+    const firstSearchRun = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'delta',
+      limit: 2,
+      scope: 'project',
+      databasePath: dbPath,
+    });
+    const secondSearchRun = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'delta',
+      limit: 2,
+      scope: 'project',
+      databasePath: dbPath,
+    });
+
+    expect(firstSearchRun.results.map((item) => item.documentId)).toEqual([
+      100, 101,
+    ]);
+    expect(secondSearchRun.results.map((item) => item.documentId)).toEqual([
+      100, 101,
+    ]);
+    expect(secondSearchRun.results).toEqual(firstSearchRun.results);
+
+    closeDatabase(db);
+  });
+
   test('fts retriever orders tied bm25 scores by chunk id', async () => {
     const dbDir = join(tempRoot, 'db');
     const db = await openDatabase(join(dbDir, 'index.sqlite'));

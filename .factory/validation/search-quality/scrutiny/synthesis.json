@@ -23,9 +23,7 @@
     "total": 2,
     "passed": 1,
     "failed": 1,
-    "failedFeatures": [
-      "fix-search-retriever-tie-determinism"
-    ]
+    "failedFeatures": ["fix-search-retriever-tie-determinism"]
   },
   "blockingIssues": [
     {
