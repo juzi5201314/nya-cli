@@ -7,6 +7,7 @@ import { rebuildSourcesFromManifest } from '../src/core/ingest/rebuild-sources';
 import {
   closeDatabase,
   getDbStats,
+  getDoctorReport,
   initializeEmptyIndex,
   listSourceManifests,
   openDatabase,
@@ -147,16 +148,21 @@ const config: AppConfig = {
 class FakeEmbeddingProvider implements EmbeddingProvider {
   readonly id = 'google' as const;
   readonly model = 'fake-google-embedding';
-  readonly dimensions = 4;
+
+  constructor(readonly dimensions = 4) {}
 
   private encode(text: string): number[] {
     const normalized = text.toLowerCase();
-    return [
+    const base = [
       normalized.includes('vector') ? 10 : 0,
       normalized.includes('search') ? 10 : 0,
       normalized.includes('git') ? 10 : 0,
       normalized.includes('remote') ? 10 : 0,
     ];
+    return Array.from(
+      { length: this.dimensions },
+      (_, index) => base[index] ?? 0
+    );
   }
 
   async embedDocuments(values: string[]): Promise<number[][]> {
@@ -552,6 +558,216 @@ describe('rebuild and remote git', () => {
     );
     expect(goodManifest?.lastRebuildStatus).toBe('idle');
     expect(fixedManifest?.lastRebuildStatus).toBe('success');
+    closeDatabase(db);
+  });
+
+  test('partial rebuild marks the index degraded and persists failed manifests', async () => {
+    const repoA = join(tempRoot, 'partial-good');
+    const repoB = join(tempRoot, 'partial-fail');
+    const dbPath = join(tempRoot, 'partial-rebuild.sqlite');
+    await mkdir(repoA, { recursive: true });
+    await mkdir(repoB, { recursive: true });
+    await writeFile(
+      join(repoA, 'README.md'),
+      '# Good\n\nA healthy source still rebuilds.\n'
+    );
+    await writeFile(
+      join(repoB, 'README.md'),
+      '# Broken\n\nThis source will be removed before rebuild.\n'
+    );
+
+    for (const repo of [repoA, repoB]) {
+      await runGit(repo, ['init']);
+      await runGit(repo, ['config', 'user.email', 'test@example.com']);
+      await runGit(repo, ['config', 'user.name', 'Test User']);
+      await runGit(repo, ['add', '.']);
+      await runGit(repo, ['commit', '-m', 'initial']);
+    }
+
+    const db = await openDatabase(dbPath);
+    const provider = new FakeEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      provider.fingerprint(config.index.chunking_version)
+    );
+
+    await learnGitSource({
+      source: repoA,
+      config,
+      db,
+      scope: 'project',
+      scopePaths: {
+        scope: 'project',
+        projectDirName: '.nya-cli',
+        databasePath: dbPath,
+        databaseDir: tempRoot,
+        remoteCacheDir: join(tempRoot, 'cache'),
+      },
+      embeddingProvider: provider,
+      rebuildTriggered: false,
+      rebuildReason: null,
+    });
+
+    await learnGitSource({
+      source: repoB,
+      config,
+      db,
+      scope: 'project',
+      scopePaths: {
+        scope: 'project',
+        projectDirName: '.nya-cli',
+        databasePath: dbPath,
+        databaseDir: tempRoot,
+        remoteCacheDir: join(tempRoot, 'cache'),
+      },
+      embeddingProvider: provider,
+      rebuildTriggered: false,
+      rebuildReason: null,
+    });
+
+    await rm(repoB, { recursive: true, force: true });
+
+    const summary = await rebuildSourcesFromManifest({
+      config,
+      db,
+      scope: 'project',
+      scopePaths: {
+        scope: 'project',
+        projectDirName: '.nya-cli',
+        databasePath: dbPath,
+        databaseDir: tempRoot,
+        remoteCacheDir: join(tempRoot, 'cache'),
+      },
+      embeddingProvider: provider,
+      webIngestProvider: fakeWebIngestProvider,
+      sourceKey: undefined,
+      retryCount: 0,
+      failFast: false,
+      failedOnly: false,
+    });
+
+    const report = getDoctorReport({
+      dbPath,
+      dbExists: true,
+      db,
+      fingerprint: provider.fingerprint(config.index.chunking_version),
+    });
+
+    expect(summary.succeeded.length).toBe(1);
+    expect(summary.failed.length).toBe(1);
+    expect(summary.failed[0]?.sourceKey).toBe(repoB);
+    expect(summary.failed[0]?.attempts).toBe(1);
+    expect(report.healthStatus).toBe('degraded');
+    expect(report.needsRebuild).toBe(true);
+    expect(report.rebuildReason).toBe('one or more source rebuilds failed');
+
+    const manifests = listSourceManifests(db);
+    const failedManifest = manifests.find((item) => item.sourceKey === repoB);
+    expect(failedManifest?.lastRebuildStatus).toBe('failed');
+    expect(failedManifest?.lastRebuildError).toBeTruthy();
+    expect(failedManifest?.lastRebuildAttempts).toBe(1);
+    closeDatabase(db);
+  });
+
+  test('blocks source and failed-only rebuilds when fingerprint mismatch requires a full rebuild', async () => {
+    const repoA = join(tempRoot, 'guard-a');
+    const repoB = join(tempRoot, 'guard-b');
+    const dbPath = join(tempRoot, 'guard.sqlite');
+    await mkdir(repoA, { recursive: true });
+    await mkdir(repoB, { recursive: true });
+    await writeFile(join(repoA, 'README.md'), '# Guard A\n\nfirst source\n');
+    await writeFile(join(repoB, 'README.md'), '# Guard B\n\nsecond source\n');
+
+    for (const repo of [repoA, repoB]) {
+      await runGit(repo, ['init']);
+      await runGit(repo, ['config', 'user.email', 'test@example.com']);
+      await runGit(repo, ['config', 'user.name', 'Test User']);
+      await runGit(repo, ['add', '.']);
+      await runGit(repo, ['commit', '-m', 'initial']);
+    }
+
+    const db = await openDatabase(dbPath);
+    const provider = new FakeEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      provider.fingerprint(config.index.chunking_version)
+    );
+
+    for (const repo of [repoA, repoB]) {
+      await learnGitSource({
+        source: repo,
+        config,
+        db,
+        scope: 'project',
+        scopePaths: {
+          scope: 'project',
+          projectDirName: '.nya-cli',
+          databasePath: dbPath,
+          databaseDir: tempRoot,
+          remoteCacheDir: join(tempRoot, 'cache'),
+        },
+        embeddingProvider: provider,
+        rebuildTriggered: false,
+        rebuildReason: null,
+      });
+    }
+
+    const before = listSourceManifests(db).map((manifest) => ({
+      sourceKey: manifest.sourceKey,
+      lastRebuildStatus: manifest.lastRebuildStatus,
+      lastRebuildError: manifest.lastRebuildError,
+      lastRebuildAttempts: manifest.lastRebuildAttempts,
+    }));
+
+    const mismatchedProvider = new FakeEmbeddingProvider(8);
+    const sourceError = await rebuildSourcesFromManifest({
+      config,
+      db,
+      scope: 'project',
+      scopePaths: {
+        scope: 'project',
+        projectDirName: '.nya-cli',
+        databasePath: dbPath,
+        databaseDir: tempRoot,
+        remoteCacheDir: join(tempRoot, 'cache'),
+      },
+      embeddingProvider: mismatchedProvider,
+      webIngestProvider: fakeWebIngestProvider,
+      sourceKey: repoA,
+      retryCount: 0,
+      failFast: false,
+      failedOnly: false,
+    }).catch((error: unknown) => error);
+
+    const failedOnlyError = await rebuildSourcesFromManifest({
+      config,
+      db,
+      scope: 'project',
+      scopePaths: {
+        scope: 'project',
+        projectDirName: '.nya-cli',
+        databasePath: dbPath,
+        databaseDir: tempRoot,
+        remoteCacheDir: join(tempRoot, 'cache'),
+      },
+      embeddingProvider: mismatchedProvider,
+      webIngestProvider: fakeWebIngestProvider,
+      sourceKey: undefined,
+      retryCount: 0,
+      failFast: false,
+      failedOnly: true,
+    }).catch((error: unknown) => error);
+
+    const after = listSourceManifests(db).map((manifest) => ({
+      sourceKey: manifest.sourceKey,
+      lastRebuildStatus: manifest.lastRebuildStatus,
+      lastRebuildError: manifest.lastRebuildError,
+      lastRebuildAttempts: manifest.lastRebuildAttempts,
+    }));
+
+    expect(String(sourceError)).toContain('不能只重建单个 source');
+    expect(String(failedOnlyError)).toContain('不能只重试失败 source');
+    expect(after).toEqual(before);
     closeDatabase(db);
   });
 });

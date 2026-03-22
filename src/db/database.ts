@@ -1,5 +1,4 @@
 import { Database } from 'bun:sqlite';
-import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import * as sqliteVec from 'sqlite-vec';
@@ -91,6 +90,9 @@ export type DbStats = {
 export type DbDoctorReport = {
   dbPath: string;
   dbExists: boolean;
+  healthStatus: 'ok' | 'degraded' | 'missing';
+  needsRebuild: boolean;
+  rebuildReason: string | null;
   hasFts: boolean;
   hasVector: boolean;
   fingerprint: EmbeddingFingerprint | null;
@@ -100,9 +102,12 @@ export type DbDoctorReport = {
 
 export type IndexState = {
   needsRebuild: boolean;
+  requiresFullRebuild: boolean;
+  fingerprintMismatch: boolean;
   reason: string | null;
   fingerprint: EmbeddingFingerprint | null;
   sourceManifests: number;
+  failedSourceManifests: number;
   hasSearchTables: boolean;
 };
 
@@ -153,6 +158,18 @@ export async function openDatabase(databasePath: string): Promise<Database> {
   }
 
   throw lastError;
+}
+
+export function openReadonlyDatabase(databasePath: string): Database {
+  maybeConfigureCustomSqlite();
+
+  const db = new Database(databasePath, {
+    readonly: true,
+    strict: true,
+    safeIntegers: true,
+  });
+
+  return db;
 }
 
 export function closeDatabase(db: Database): void {
@@ -466,34 +483,70 @@ export function inspectIndexState(
     tableExists(db, 'chunk_fts') &&
     tableExists(db, 'chunk_vec');
   const sourceManifests = listSourceManifests(db).length;
+  const failedSourceManifests = listFailedSourceManifests(db).length;
+  const fingerprintMismatch = !fingerprintsEqual(
+    storedFingerprint,
+    fingerprint
+  );
+
+  let reason: string | null = null;
+  if (!hasSearchTables) {
+    reason = 'index bootstrap required';
+  } else if (failedSourceManifests > 0) {
+    reason = 'one or more source rebuilds failed';
+  } else if (fingerprintMismatch) {
+    reason = storedFingerprint
+      ? 'embedding fingerprint changed'
+      : 'embedding fingerprint missing';
+  }
 
   if (!hasSearchTables) {
     return {
       needsRebuild: true,
-      reason: 'index bootstrap required',
+      requiresFullRebuild: true,
+      fingerprintMismatch,
+      reason,
       fingerprint: storedFingerprint,
       sourceManifests,
+      failedSourceManifests,
       hasSearchTables,
     };
   }
 
-  if (!fingerprintsEqual(storedFingerprint, fingerprint)) {
+  if (failedSourceManifests > 0) {
     return {
       needsRebuild: true,
-      reason: storedFingerprint
-        ? 'embedding fingerprint changed'
-        : 'embedding fingerprint missing',
+      requiresFullRebuild: fingerprintMismatch,
+      fingerprintMismatch,
+      reason,
       fingerprint: storedFingerprint,
       sourceManifests,
+      failedSourceManifests,
+      hasSearchTables,
+    };
+  }
+
+  if (fingerprintMismatch) {
+    return {
+      needsRebuild: true,
+      requiresFullRebuild: true,
+      fingerprintMismatch,
+      reason,
+      fingerprint: storedFingerprint,
+      sourceManifests,
+      failedSourceManifests,
       hasSearchTables,
     };
   }
 
   return {
     needsRebuild: false,
+    requiresFullRebuild: false,
+    fingerprintMismatch: false,
     reason: null,
     fingerprint: storedFingerprint,
     sourceManifests,
+    failedSourceManifests,
     hasSearchTables,
   };
 }
@@ -1285,11 +1338,44 @@ export function getDbStats(db: Database): DbStats {
   };
 }
 
-export function getDoctorReport(dbPath: string, db: Database): DbDoctorReport {
-  const stats = getDbStats(db);
+export function getDoctorReport(args: {
+  dbPath: string;
+  dbExists: boolean;
+  db: Database | null;
+  fingerprint: EmbeddingFingerprint | null;
+}): DbDoctorReport {
+  if (!args.dbExists || !args.db) {
+    return {
+      dbPath: args.dbPath,
+      dbExists: false,
+      healthStatus: 'missing',
+      needsRebuild: true,
+      rebuildReason: 'database missing',
+      hasFts: false,
+      hasVector: false,
+      fingerprint: null,
+      sourceManifests: 0,
+      failedSourceManifests: 0,
+    };
+  }
+
+  const stats = getDbStats(args.db);
+  const state = args.fingerprint
+    ? inspectIndexState(args.db, args.fingerprint)
+    : {
+        needsRebuild: stats.failedSourceManifests > 0,
+        reason:
+          stats.failedSourceManifests > 0
+            ? 'one or more source rebuilds failed'
+            : null,
+      };
+
   return {
-    dbPath,
-    dbExists: existsSync(dbPath),
+    dbPath: args.dbPath,
+    dbExists: true,
+    healthStatus: state.needsRebuild ? 'degraded' : 'ok',
+    needsRebuild: state.needsRebuild,
+    rebuildReason: state.reason,
     hasFts: stats.hasFts,
     hasVector: stats.hasVector,
     fingerprint: stats.fingerprint,

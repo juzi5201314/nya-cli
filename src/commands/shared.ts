@@ -1,3 +1,6 @@
+import { copyFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 import { loadConfig } from '../config/load-config';
 import { loadProjectEnv } from '../config/load-env';
 import { resolveScopePaths } from '../config/paths';
@@ -10,8 +13,12 @@ import {
   inspectIndexState,
   listSourceManifests,
   openDatabase,
+  openReadonlyDatabase,
 } from '../db/database';
-import { createEmbeddingProvider } from '../providers/embedding';
+import {
+  buildEmbeddingFingerprint,
+  createEmbeddingProvider,
+} from '../providers/embedding';
 import { createLlmProvider } from '../providers/llm';
 import {
   createWebIngestProvider,
@@ -135,6 +142,70 @@ export async function loadDbRuntime(args: {
   };
 }
 
+export async function loadDbDoctorRuntime(args: {
+  configPath: string | undefined;
+  scope: ScopeMode;
+}) {
+  await loadProjectEnv(args.configPath);
+  let projectDirName = '.nya-cli';
+  let config = null as Awaited<ReturnType<typeof loadConfig>>['config'] | null;
+
+  try {
+    const loaded = await loadConfig(args.configPath);
+    await loadProjectEnv(loaded.path);
+    projectDirName = loaded.config.app.project_dir_name;
+    config = loaded.config;
+  } catch {
+    // db doctor 允许在没有配置文件的情况下检查已有数据库或空目录。
+  }
+
+  const scopePaths = await resolveScopePaths({
+    scope: args.scope,
+    projectDirName,
+    ensureDirectories: false,
+  });
+  const dbExists = await Bun.file(scopePaths.databasePath).exists();
+  let db: ReturnType<typeof openReadonlyDatabase> | null = null;
+  let cleanup = async () => {};
+
+  if (dbExists) {
+    const snapshotDir = await mkdtemp(join(tmpdir(), 'nya-cli-doctor-'));
+    const snapshotDatabasePath = join(
+      snapshotDir,
+      basename(scopePaths.databasePath)
+    );
+    try {
+      await copyFile(scopePaths.databasePath, snapshotDatabasePath);
+
+      for (const suffix of ['-wal', '-shm']) {
+        const sourceSidecar = `${scopePaths.databasePath}${suffix}`;
+        const snapshotSidecar = `${snapshotDatabasePath}${suffix}`;
+        if (await Bun.file(sourceSidecar).exists()) {
+          await copyFile(sourceSidecar, snapshotSidecar);
+        }
+      }
+
+      db = openReadonlyDatabase(snapshotDatabasePath);
+      cleanup = async () => {
+        await rm(snapshotDir, { recursive: true, force: true });
+      };
+    } catch (error) {
+      await rm(snapshotDir, { recursive: true, force: true });
+      throw error;
+    }
+  }
+  const fingerprint = config ? buildEmbeddingFingerprint(config) : null;
+
+  return {
+    scope: args.scope,
+    scopePaths,
+    dbExists,
+    db,
+    fingerprint,
+    cleanup,
+  };
+}
+
 export function renderStats(
   stats: ReturnType<typeof getDbStats>,
   scope: ScopeMode,
@@ -162,6 +233,9 @@ export function renderDoctor(
     `scope: ${scope}`,
     `database: ${report.dbPath}`,
     `db_exists: ${report.dbExists}`,
+    `health_status: ${report.healthStatus}`,
+    `needs_rebuild: ${report.needsRebuild}`,
+    `rebuild_reason: ${report.rebuildReason ?? 'null'}`,
     `sources: ${report.sourceManifests}`,
     `failed_sources: ${report.failedSourceManifests}`,
     `fts: ${report.hasFts}`,

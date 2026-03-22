@@ -19,6 +19,7 @@ export async function resolveScopePaths(args: {
   scope: ScopeMode;
   cwd?: string;
   projectDirName: string;
+  ensureDirectories?: boolean;
 }): Promise<ScopePaths> {
   const cwd = args.cwd ?? process.cwd();
   const globalPaths = envPaths(APP_NAME);
@@ -29,8 +30,10 @@ export async function resolveScopePaths(args: {
       ? resolve(cwd, args.projectDirName)
       : globalPaths.data;
 
-  await mkdir(scopeDir, { recursive: true });
-  await mkdir(remoteCacheDir, { recursive: true });
+  if (args.ensureDirectories !== false) {
+    await mkdir(scopeDir, { recursive: true });
+    await mkdir(remoteCacheDir, { recursive: true });
+  }
 
   return {
     scope: args.scope,

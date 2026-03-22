@@ -159,6 +159,11 @@ export async function rebuildSourcesFromManifest(args: {
       ? listFailedSourceManifests(args.db)
       : listSourceManifests(args.db);
 
+  const indexState = inspectIndexState(
+    args.db,
+    args.embeddingProvider.fingerprint(args.config.index.chunking_version)
+  );
+
   if (args.sourceKey && manifests.length === 0) {
     throw new Error(
       args.failedOnly
@@ -167,7 +172,30 @@ export async function rebuildSourcesFromManifest(args: {
     );
   }
 
+  if (args.failedOnly && indexState.requiresFullRebuild) {
+    throw new Error(
+      '当前 embedding fingerprint 已变化，不能只重试失败 source。请先执行完整 db rebuild。'
+    );
+  }
+
+  if (
+    args.sourceKey &&
+    indexState.requiresFullRebuild &&
+    listSourceManifests(args.db).length > 1
+  ) {
+    throw new Error(
+      '当前 embedding fingerprint 已变化，不能只重建单个 source。请先对整个 scope 执行 db rebuild。'
+    );
+  }
+
   if (manifests.length === 0) {
+    if (args.failedOnly) {
+      return {
+        succeeded: [],
+        failed: [],
+      };
+    }
+
     initializeEmptyIndex(
       args.db,
       args.embeddingProvider.fingerprint(args.config.index.chunking_version)
@@ -178,28 +206,7 @@ export async function rebuildSourcesFromManifest(args: {
     };
   }
 
-  const indexState = inspectIndexState(
-    args.db,
-    args.embeddingProvider.fingerprint(args.config.index.chunking_version)
-  );
-
-  if (
-    args.sourceKey &&
-    indexState.needsRebuild &&
-    listSourceManifests(args.db).length > 1
-  ) {
-    throw new Error(
-      '当前 embedding fingerprint 已变化，不能只重建单个 source。请先对整个 scope 执行 db rebuild。'
-    );
-  }
-
-  if (args.failedOnly && indexState.needsRebuild) {
-    throw new Error(
-      '当前 embedding fingerprint 已变化，不能只重试失败 source。请先执行完整 db rebuild。'
-    );
-  }
-
-  if (!args.failedOnly && (!args.sourceKey || indexState.needsRebuild)) {
+  if (!args.failedOnly && (!args.sourceKey || indexState.requiresFullRebuild)) {
     initializeEmptyIndex(
       args.db,
       args.embeddingProvider.fingerprint(args.config.index.chunking_version)

@@ -6,6 +6,7 @@ import {
   getDbStats,
   getDoctorReport,
   listSourceManifests,
+  loadDbDoctorRuntime,
   loadDbRuntime,
   loadOperationRuntime,
   printOutput,
@@ -51,13 +52,18 @@ export async function runDbDoctor(args: {
   scope: 'global' | 'project';
   asJson: boolean;
 }): Promise<void> {
-  const runtime = await loadDbRuntime({
+  const runtime = await loadDbDoctorRuntime({
     configPath: args.configPath,
     scope: args.scope,
   });
 
   try {
-    const report = getDoctorReport(runtime.scopePaths.databasePath, runtime.db);
+    const report = getDoctorReport({
+      dbPath: runtime.scopePaths.databasePath,
+      dbExists: runtime.dbExists,
+      db: runtime.db,
+      fingerprint: runtime.fingerprint,
+    });
     if (args.asJson) {
       printOutput(
         {
@@ -70,7 +76,10 @@ export async function runDbDoctor(args: {
     }
     printOutput(renderDoctor(report, runtime.scope), false);
   } finally {
-    closeDatabase(runtime.db);
+    if (runtime.db) {
+      closeDatabase(runtime.db);
+    }
+    await runtime.cleanup();
   }
 }
 

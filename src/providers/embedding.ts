@@ -235,3 +235,28 @@ export function createEmbeddingProvider(
       return new OpenAiEmbeddingProvider(config, progress);
   }
 }
+
+export function buildEmbeddingFingerprint(
+  config: AppConfig
+): EmbeddingFingerprint {
+  switch (config.embedding.provider) {
+    case 'google':
+      return {
+        provider: 'google',
+        model: config.embedding.model,
+        dimensions: config.embedding.providers.google.output_dimensionality,
+        taskType: config.embedding.task_type,
+        chunkingVersion: config.index.chunking_version,
+        chunker: 'tree-sitter',
+      };
+    case 'openai':
+      return {
+        provider: 'openai',
+        model: config.embedding.model,
+        dimensions: config.embedding.providers.openai.dimensions,
+        taskType: config.embedding.task_type,
+        chunkingVersion: config.index.chunking_version,
+        chunker: 'tree-sitter',
+      };
+  }
+}
