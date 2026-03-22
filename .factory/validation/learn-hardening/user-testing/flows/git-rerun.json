@@ -1,0 +1,86 @@
+{
+  "groupId": "git-rerun",
+  "testedAt": "2026-03-22T13:19:04Z",
+  "isolation": {
+    "workspaceRoot": "/tmp/nya-cli-user-testing-learn-hardening-r2",
+    "missionDir": "/root/.factory/missions/6586b515-2320-4b22-9fa5-669b0710e675",
+    "learnConfig": "/tmp/nya-cli-user-testing-learn-hardening-r2/learn-test.toml"
+  },
+  "toolsUsed": ["bun run src/index.ts", "bun run smoke:google"],
+  "assertions": [
+    {
+      "id": "VAL-LEARN-GIT-004",
+      "title": "Re-learn removes deleted files",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run `OPENAI_API_KEY=dummy GOOGLE_GENERATIVE_AI_API_KEY=dummy bun run /root/projects/nya2/src/index.ts learn git /tmp/nya-cli-user-testing-learn-hardening-r2/case-004/repo --config /tmp/nya-cli-user-testing-learn-hardening-r2/learn-test.toml --project --json --no-tui` before deleting the marker file",
+          "expected": "Initial learn indexes both tracked files",
+          "observed": "documentsIndexed=2, chunksIndexed=2, rebuildTriggered=true"
+        },
+        {
+          "action": "Delete `deleted-marker.txt`, commit the removal, then rerun the same `learn git` command",
+          "expected": "Second learn drops the deleted file from the project index",
+          "observed": "documentsIndexed=1, chunksIndexed=1, rebuildTriggered=false"
+        },
+        {
+          "action": "Run `search LEARN_R2_004_DELETED_MARKER_9b6e4f2d` and `get deleted-marker.txt` on the relearned project",
+          "expected": "Search returns zero hits and get fails because the deleted file is no longer retrievable",
+          "observed": "Search returned `results: []`; `get` exited 1 with `未找到文档: deleted-marker.txt`"
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "learn-hardening/git-rerun/VAL-LEARN-GIT-004-learn1.out",
+          "learn-hardening/git-rerun/VAL-LEARN-GIT-004-learn2.out",
+          "learn-hardening/git-rerun/VAL-LEARN-GIT-004-search.out",
+          "learn-hardening/git-rerun/VAL-LEARN-GIT-004-get.out"
+        ],
+        "stderr": []
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-LEARN-GIT-005",
+      "title": "Learn Git indexes tracked files only",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run `OPENAI_API_KEY=dummy GOOGLE_GENERATIVE_AI_API_KEY=dummy bun run /root/projects/nya2/src/index.ts learn git /tmp/nya-cli-user-testing-learn-hardening-r2/case-005b/repo --config /tmp/nya-cli-user-testing-learn-hardening-r2/learn-test.toml --project --json --no-tui` on a repo with one tracked token file and one untracked token file",
+          "expected": "Only the tracked file is indexed",
+          "observed": "documentsIndexed=1, chunksIndexed=1, rebuildTriggered=true"
+        },
+        {
+          "action": "Run `search tk7e30d8f4a1` and `search ut9ad1c2e3b4` on the learned project",
+          "expected": "Tracked token is searchable and untracked token returns zero hits",
+          "observed": "Tracked search returned `tracked.txt`; untracked search returned `results: []`"
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "learn-hardening/git-rerun/VAL-LEARN-GIT-005b-learn.out",
+          "learn-hardening/git-rerun/VAL-LEARN-GIT-005b-search-tracked.out",
+          "learn-hardening/git-rerun/VAL-LEARN-GIT-005b-search-untracked.out"
+        ],
+        "stderr": []
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "`get` rejected `--no-tui` with `Unknown option --tui`; I retried without that flag to validate the missing-document failure path.",
+      "resolved": true,
+      "resolution": "Used `bun run /root/projects/nya2/src/index.ts get deleted-marker.txt --config /tmp/nya-cli-user-testing-learn-hardening-r2/learn-test.toml --project --json` instead.",
+      "affectedAssertions": ["VAL-LEARN-GIT-004"]
+    },
+    {
+      "description": "An initial untracked-marker fixture shared tokens with the tracked file and returned an unrelated tracked hit; the test was tightened to disjoint single-token markers.",
+      "resolved": true,
+      "resolution": "Re-ran the assertion in `case-005b` with non-overlapping tracked/untracked tokens, which produced zero hits for the untracked token.",
+      "affectedAssertions": ["VAL-LEARN-GIT-005"]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 2 assertions: 2 passed (VAL-LEARN-GIT-004, VAL-LEARN-GIT-005). `bun run smoke:google` passed."
+}

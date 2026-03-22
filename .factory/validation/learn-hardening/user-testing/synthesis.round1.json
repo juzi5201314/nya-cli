@@ -1,0 +1,41 @@
+{
+  "milestone": "learn-hardening",
+  "round": 1,
+  "status": "fail",
+  "assertionsSummary": {
+    "total": 11,
+    "passed": 9,
+    "failed": 2,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-LEARN-GIT-001",
+    "VAL-LEARN-GIT-002",
+    "VAL-LEARN-GIT-003",
+    "VAL-LEARN-WEB-001",
+    "VAL-LEARN-WEB-002",
+    "VAL-LEARN-WEB-003",
+    "VAL-LEARN-WEB-004",
+    "VAL-LEARN-WEB-010",
+    "VAL-LEARN-WEB-011"
+  ],
+  "failedAssertions": [
+    {
+      "id": "VAL-LEARN-GIT-004",
+      "reason": "search still returned the surviving tracked file for the deleted-marker query instead of zero hits after re-learn"
+    },
+    {
+      "id": "VAL-LEARN-GIT-005",
+      "reason": "search still returned the tracked document for an untracked-marker query instead of zero hits"
+    }
+  ],
+  "blockedAssertions": [],
+  "appliedUpdates": [
+    {
+      "target": "user-testing.md",
+      "description": "Documented that offline learn-web validation should use an isolated temp config with a local OpenAI-compatible stub server because the repo defaults to live provider config.",
+      "source": "flow-report"
+    }
+  ],
+  "previousRound": null
+}
