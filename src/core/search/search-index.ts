@@ -36,19 +36,32 @@ export type SearchResponse = {
 const RRF_K = 60;
 
 export function normalizeSearchExtensions(
-  values: readonly string[] | undefined
+  values: readonly unknown[] | undefined
 ): string[] {
   if (!values || values.length === 0) {
     return [];
   }
 
-  const normalized = values
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean)
-    .map((value) => (value.startsWith('.') ? value : `.${value}`))
-    .filter(
-      (value) => value !== '.' && !value.includes('/') && !value.includes('\\')
-    );
+  const normalized = values.flatMap((value) => {
+    if (typeof value !== 'string') {
+      return [];
+    }
+
+    const trimmed = value.trim().toLowerCase();
+    if (
+      trimmed.length === 0 ||
+      trimmed === '.' ||
+      trimmed === 'undefined' ||
+      trimmed === '.undefined' ||
+      /\s/.test(trimmed) ||
+      trimmed.includes('/') ||
+      trimmed.includes('\\')
+    ) {
+      return [];
+    }
+
+    return [trimmed.startsWith('.') ? trimmed : `.${trimmed}`];
+  });
 
   return [...new Set(normalized)];
 }

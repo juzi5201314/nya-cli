@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { learnGitSource } from '../src/core/ingest/learn-git';
-import { searchIndex } from '../src/core/search/search-index';
+import {
+  normalizeSearchExtensions,
+  searchIndex,
+} from '../src/core/search/search-index';
 import {
   closeDatabase,
   initializeEmptyIndex,
@@ -565,11 +568,19 @@ describe('learn and search', () => {
       ],
     });
 
+    const allResults = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'vector guide',
+      limit: 5,
+      scope: 'project',
+      databasePath: dbPath,
+    });
     const tsOnly = await searchIndex({
       db,
       embeddingProvider: provider,
       query: 'vector guide',
-      extensions: ['ts'],
+      extensions: ['TS'],
       limit: 5,
       scope: 'project',
       databasePath: dbPath,
@@ -592,7 +603,21 @@ describe('learn and search', () => {
       scope: 'project',
       databasePath: dbPath,
     });
+    const normalized = normalizeSearchExtensions([
+      undefined as unknown as string,
+      ' TS ',
+      '.md',
+      'undefined',
+      '.undefined',
+      ' ',
+    ]);
 
+    expect(allResults.extensions).toEqual([]);
+    expect(allResults.results.map((item) => item.path).sort()).toEqual([
+      'docs/guide.md',
+      'src/guide.ts',
+      'src/native/main.c',
+    ]);
     expect(tsOnly.extensions).toEqual(['.ts']);
     expect(tsOnly.results.map((item) => item.path)).toEqual(['src/guide.ts']);
     expect(mixed.extensions).toEqual(['.md', '.ts']);
@@ -603,6 +628,7 @@ describe('learn and search', () => {
     expect(cOnly.results.map((item) => item.path)).toEqual([
       'src/native/main.c',
     ]);
+    expect(normalized).toEqual(['.ts', '.md']);
 
     closeDatabase(db);
   });
