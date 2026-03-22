@@ -1,0 +1,15 @@
+{
+  "featureId": "fix-remote-git-subprocess-url-redaction",
+  "reviewedAt": "2026-03-22T07:05:03Z",
+  "commitId": "7ca50ea9264a6060dccfee5cbd9be4645b53231c",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Remote git clone/fetch now use the network-safe redacted URL everywhere the subprocess sees it, and the regression test exercises the PATH-injected git wrapper to verify the raw secret never reaches git argv.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": "/root/projects/nya2/.factory/validation/safety-correctness/scrutiny/reviews/fix-remote-git-credential-leak-window.json",
+  "summary": "The prior blocking leak window is closed: git subprocesses receive the redacted URL, and the new test proves the argv path is covered via a PATH-injected logging git wrapper."
+}

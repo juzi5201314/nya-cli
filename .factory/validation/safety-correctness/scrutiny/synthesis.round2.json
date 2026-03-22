@@ -1,0 +1,39 @@
+{
+  "milestone": "safety-correctness",
+  "round": 2,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "bun test",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "bun run typecheck",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "bunx biome check .",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 1,
+    "failed": 1,
+    "failedFeatures": ["fix-remote-git-credential-leak-window"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "fix-remote-git-credential-leak-window",
+      "severity": "blocking",
+      "description": "Remote git ingest still passes the raw credential-bearing URL to git fetch/clone, so the leak window remains and raw credentials can still cross the subprocess boundary."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [],
+  "rejectedObservations": [],
+  "previousRound": "/root/projects/nya2/.factory/validation/safety-correctness/scrutiny/synthesis.round1.json"
+}
