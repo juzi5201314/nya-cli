@@ -1,6 +1,6 @@
 {
   "milestone": "search-quality",
-  "round": 1,
+  "round": 2,
   "status": "fail",
   "validatorsRun": {
     "test": {
@@ -21,38 +21,32 @@
   },
   "reviewsSummary": {
     "total": 2,
-    "passed": 0,
-    "failed": 2,
+    "passed": 1,
+    "failed": 1,
     "failedFeatures": [
-      "search-hybrid-fusion-dedupe-underfill-determinism",
-      "search-snippet-section-fallback-quality"
+      "fix-search-retriever-tie-determinism"
     ]
   },
   "blockingIssues": [
     {
-      "featureId": "search-hybrid-fusion-dedupe-underfill-determinism",
+      "featureId": "fix-search-retriever-tie-determinism",
       "severity": "blocking",
-      "description": "Vector and FTS retriever tie cases are still not explicitly determinized, so hybrid ranking can vary across runs."
-    },
-    {
-      "featureId": "search-snippet-section-fallback-quality",
-      "severity": "blocking",
-      "description": "Oversized single-symbol chunks can recurse with duplicated section labels, producing labels like `Foo · Foo`."
+      "description": "The vector retriever still orders equal-distance candidates only by distance before its inner LIMIT, so the top-N subset and downstream RRF ranking can still drift across runs."
     }
   ],
   "appliedUpdates": [
     {
       "target": "library",
-      "description": "Documented the asymmetric vector-vs-FTS suffix-filter ordering and its impact on oversampling/determinism in .factory/library/search.md.",
-      "sourceFeature": "search-hybrid-fusion-dedupe-underfill-determinism"
+      "description": "Documented that vector retriever tie ordering must be stabilized before the inner LIMIT; adding a secondary sort after LIMIT is too late for equal-distance candidates.",
+      "sourceFeature": "fix-search-retriever-tie-determinism"
     }
   ],
   "suggestedGuidanceUpdates": [],
   "rejectedObservations": [
     {
       "observation": "The search-worker skill's tests-first guidance was deviated from during the feature review.",
-      "reason": "One-off implementation detail with a justified explanation; not a systemic guidance gap requiring skill or AGENTS updates."
+      "reason": "Not systemic; this was a justified one-off repro-first deviation for a pure chunker regression and does not warrant an AGENTS or skill update."
     }
   ],
-  "previousRound": null
+  "previousRound": ".factory/validation/search-quality/scrutiny/synthesis.round1.json"
 }

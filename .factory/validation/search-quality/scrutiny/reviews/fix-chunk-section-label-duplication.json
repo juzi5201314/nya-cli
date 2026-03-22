@@ -1,0 +1,21 @@
+{
+  "featureId": "fix-chunk-section-label-duplication",
+  "reviewedAt": "2026-03-22T14:07:40Z",
+  "commitId": "9eed31c0295c7504861f3664407e07f63961d739",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix closes the recursive chunk-label duplication bug: oversized single-symbol splits now preserve a single symbol segment, and the new regression test exercises the recursive path that previously produced labels like `Foo · Foo`.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The worker intentionally used an inline repro script before adding the regression test, which deviates from the search-worker skill's strict 'tests first' guidance. That seems justified for this pure chunker regression, but the skill could explicitly allow targeted repro scripts when no CLI fixture is needed.",
+      "evidence": "Handoff skillFeedback.followedProcedure=false; the transcript skeleton shows an inline Execute repro step before the ApplyPatch that added the regression test."
+    }
+  ],
+  "addressesFailureFrom": "/root/projects/nya2/.factory/validation/search-quality/scrutiny/reviews/search-snippet-section-fallback-quality.json",
+  "summary": "Pass: the recursive tree-sitter split path no longer duplicates section labels, and the regression test covers the oversized single-symbol case that caused the original failure."
+}

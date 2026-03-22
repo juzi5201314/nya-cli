@@ -1,0 +1,34 @@
+{
+  "featureId": "fix-search-retriever-tie-determinism",
+  "reviewedAt": "2026-03-22T14:08:40Z",
+  "commitId": "0ce4e1d8b44025d26c07a72e6132bb9e0788dc23",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "FTS tie ordering is fixed, but the vector retriever still lacks a deterministic secondary key before its inner LIMIT, so the original tie-stability blocker is not fully closed.",
+    "issues": [
+      {
+        "file": "src/db/database.ts",
+        "line": 1001,
+        "severity": "blocking",
+        "description": "`searchVector()` still orders the vec0 subquery by `distance` only before `LIMIT`, then applies `chunkId` ordering afterward. If more equal-distance rows exist than the fetch limit, SQLite can choose a different top-N subset across runs, so RRF rank can still drift under tie-heavy queries."
+      },
+      {
+        "file": "tests/learn-search.test.ts",
+        "line": 1131,
+        "severity": "non_blocking",
+        "description": "The new regression covers only two tied rows with a generous `limit` and calls `searchVector()` / `searchFts()` directly, so it does not exercise the boundary case where tied candidates exceed the fetch limit or the full hybrid `searchIndex()` path that originally surfaced the issue."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The shared search notes document the vector/FTS suffix-filter asymmetry, but they do not record the retriever top-N tie boundary nuance: vector ordering must be stabilized before the inner `LIMIT`, otherwise equal-distance rows can still be selected nondeterministically.",
+      "evidence": "`.factory/library/search.md` mentions suffix-filter asymmetry; `src/db/database.ts:997-1008` shows the vector KNN subquery still applies `ORDER BY distance LIMIT ?2` before the outer `chunkId` tie-break."
+    }
+  ],
+  "addressesFailureFrom": ".factory/validation/search-quality/scrutiny/reviews/search-hybrid-fusion-dedupe-underfill-determinism.json",
+  "summary": "Fail: FTS is deterministic now, but vector tie handling is still incomplete at the top-N boundary."
+}
