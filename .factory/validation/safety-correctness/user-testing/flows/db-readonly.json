@@ -1,0 +1,57 @@
+{
+  "groupId": "db-readonly",
+  "testedAt": "2026-03-22T07:50:29.301109+00:00",
+  "isolation": {
+    "tempDir": "/tmp/nya-cli-db-readonly-lddhbmul",
+    "repoDir": "/tmp/nya-cli-db-readonly-lddhbmul/repo",
+    "databasePath": "/tmp/nya-cli-db-readonly-lddhbmul/repo/.nya-cli/index.sqlite"
+  },
+  "toolsUsed": [
+    "bun run src/index.ts",
+    "python3"
+  ],
+  "assertions": [
+    {
+      "id": "VAL-DB-021",
+      "title": "db doctor is read-only on an existing DB",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Created an isolated git repo and a project DB under temp repo/.nya-cli/index.sqlite",
+          "expected": "A valid existing DB is available for doctor to inspect",
+          "observed": "Repo initialized and DB created with metadata, source manifest, and search tables"
+        },
+        {
+          "action": "Snapshotted main DB, WAL/SHM sidecars, and manifest/rebuild-related SQL state before doctor",
+          "expected": "Baseline state recorded with no sidecar changes",
+          "observed": "Before: db={'exists': True, 'path': '/tmp/nya-cli-db-readonly-lddhbmul/repo/.nya-cli/index.sqlite', 'size': 40960, 'sha256': '1c8866223cccfe0b85c8261153675bbaec0e758d1ce82cc980befca1189d2e4d'}; wal={'exists': False, 'path': '/tmp/nya-cli-db-readonly-lddhbmul/repo/.nya-cli/index.sqlite-wal'}; shm={'exists': False, 'path': '/tmp/nya-cli-db-readonly-lddhbmul/repo/.nya-cli/index.sqlite-shm'}"
+        },
+        {
+          "action": "Ran `bun run src/index.ts db doctor --project --json --no-tui` in the temp repo",
+          "expected": "Command exits 0 and reports an existing healthy DB",
+          "observed": "exit=0; stdout={'scope': 'project', 'dbPath': '/tmp/nya-cli-db-readonly-lddhbmul/repo/.nya-cli/index.sqlite', 'dbExists': True, 'healthStatus': 'ok', 'needsRebuild': False, 'rebuildReason': None, 'hasFts': True, 'hasVector': True, 'fingerprint': {'provider': 'google', 'model': 'fixture-model', 'dimensions': 4, 'taskType': 'RETRIEVAL_DOCUMENT', 'chunkingVersion': 'v1', 'chunker': 'tree-sitter'}, 'sourceManifests': 1, 'failedSourceManifests': 0}"
+        },
+        {
+          "action": "Snapshotted main DB, WAL/SHM sidecars, and manifest/rebuild-related SQL state after doctor",
+          "expected": "All persisted state remains unchanged",
+          "observed": "After: db={'exists': True, 'path': '/tmp/nya-cli-db-readonly-lddhbmul/repo/.nya-cli/index.sqlite', 'size': 40960, 'sha256': '1c8866223cccfe0b85c8261153675bbaec0e758d1ce82cc980befca1189d2e4d'}; wal={'exists': False, 'path': '/tmp/nya-cli-db-readonly-lddhbmul/repo/.nya-cli/index.sqlite-wal'}; shm={'exists': False, 'path': '/tmp/nya-cli-db-readonly-lddhbmul/repo/.nya-cli/index.sqlite-shm'}"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "n/a",
+        "files": [
+          "safety-correctness/db-readonly/VAL-DB-021-before.json",
+          "safety-correctness/db-readonly/VAL-DB-021-after.json",
+          "safety-correctness/db-readonly/VAL-DB-021-doctor.stdout.json",
+          "safety-correctness/db-readonly/VAL-DB-021-doctor.stderr.txt"
+        ]
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "VAL-DB-021 passed: `db doctor` left the project DB unchanged, and no `index.sqlite-wal`/`index.sqlite-shm` sidecars were created or modified."
+}

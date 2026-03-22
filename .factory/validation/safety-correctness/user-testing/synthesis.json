@@ -1,46 +1,18 @@
 {
   "milestone": "safety-correctness",
-  "round": 1,
-  "status": "fail",
+  "round": 2,
+  "status": "pass",
   "assertionsSummary": {
-    "total": 19,
-    "passed": 18,
-    "failed": 1,
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
     "blocked": 0
   },
   "passedAssertions": [
-    "VAL-SAF-001",
-    "VAL-SAF-002",
-    "VAL-SAF-010",
-    "VAL-SAF-011",
-    "VAL-SAF-012",
-    "VAL-DB-001",
-    "VAL-DB-002",
-    "VAL-DB-003",
-    "VAL-DB-004",
-    "VAL-DB-005",
-    "VAL-DB-006",
-    "VAL-DB-010",
-    "VAL-DB-020",
-    "VAL-CROSS-010",
-    "VAL-SEARCH-001",
-    "VAL-SEARCH-002",
-    "VAL-AI-040",
-    "VAL-OPS-010"
+    "VAL-DB-021"
   ],
-  "failedAssertions": [
-    {
-      "id": "VAL-DB-021",
-      "reason": "db doctor leaves the main DB unchanged but creates index.sqlite-wal and index.sqlite-shm sidecars, so it is not fully read-only on disk."
-    }
-  ],
+  "failedAssertions": [],
   "blockedAssertions": [],
-  "appliedUpdates": [
-    {
-      "target": "user-testing.md",
-      "description": "Added CLI flow guidance and a note that db doctor read-only validation should account for WAL/SHM sidecars.",
-      "source": "flow-report"
-    }
-  ],
-  "previousRound": null
+  "appliedUpdates": [],
+  "previousRound": "/root/projects/nya2/.factory/validation/safety-correctness/user-testing/synthesis.round1.json"
 }
