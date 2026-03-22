@@ -66,6 +66,12 @@ function normalizeWebPageUrl(url: string): string {
   return parsed.toString();
 }
 
+function normalizeWebPageIdentity(url: string): string {
+  return normalizeLocatorForStorage(normalizeWebPageUrl(url), {
+    stripFragment: true,
+  });
+}
+
 function normalizeWebSourceIdentity(url: string): string {
   return normalizeLocatorForStorage(url, { stripFragment: true });
 }
@@ -260,7 +266,7 @@ async function fetchPageWithRetries(args: {
   return {
     page: null,
     failure: {
-      url: normalizeWebPageUrl(args.url),
+      url: normalizeWebPageIdentity(args.url),
       stage: failure.stage,
       reason: failure.reason,
       error: failure.error,
@@ -288,9 +294,11 @@ async function collectPages(args: {
 
   const recordPage = (page: WebFetchedPage & { attempts: number }) => ({
     sourceKey,
-    sourceLocator: page.finalUrl,
-    canonicalLocator: page.canonicalUrl,
-    path: page.finalUrl,
+    sourceLocator: normalizeWebPageIdentity(page.finalUrl),
+    canonicalLocator: page.canonicalUrl
+      ? normalizeWebPageIdentity(page.canonicalUrl)
+      : null,
+    path: normalizeWebPageIdentity(page.finalUrl),
     language: 'markdown',
     title: page.title,
     content: page.markdown,
@@ -317,10 +325,11 @@ async function collectPages(args: {
       }
 
       const normalized = normalizeWebPageUrl(next.url);
-      if (visited.has(normalized)) {
+      const normalizedIdentity = normalizeWebPageIdentity(normalized);
+      if (visited.has(normalizedIdentity)) {
         continue;
       }
-      visited.add(normalized);
+      visited.add(normalizedIdentity);
 
       if (!sameOrigin(args.rootUrl, normalized)) {
         continue;
@@ -345,7 +354,7 @@ async function collectPages(args: {
 
       if (outcome.page) {
         pageAttempts.push({
-          url: normalized,
+          url: normalizedIdentity,
           stage: 'fetch',
           attempts: outcome.attempts,
         });
@@ -356,7 +365,9 @@ async function collectPages(args: {
         if (next.depth + 1 < args.maxDepth) {
           for (const link of outcome.page.links) {
             const normalizedLink = normalizeWebPageUrl(link);
-            if (visited.has(normalizedLink)) {
+            const normalizedLinkIdentity =
+              normalizeWebPageIdentity(normalizedLink);
+            if (visited.has(normalizedLinkIdentity)) {
               continue;
             }
             if (!sameOrigin(args.rootUrl, normalizedLink)) {
@@ -468,7 +479,7 @@ async function collectPages(args: {
   const page = recordPage(outcome.page);
   pages.push(page);
   pageAttempts.push({
-    url: normalizeWebPageUrl(args.rootUrl),
+    url: normalizeWebPageIdentity(args.rootUrl),
     stage: 'fetch',
     attempts: outcome.attempts,
   });

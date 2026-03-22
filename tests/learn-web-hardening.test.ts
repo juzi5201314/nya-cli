@@ -561,4 +561,101 @@ describe('learn web hardening', () => {
       closeDatabase(db);
     }
   });
+
+  test('crawl dedupes secret-query variants before insertion', async () => {
+    const dbPath = join(tempRoot, 'crawl-secret-dedupe.sqlite');
+    const db = await openDatabase(dbPath);
+    const embeddingProvider = new FakeEmbeddingProvider();
+    const config = createConfig();
+    initializeEmptyIndex(
+      db,
+      embeddingProvider.fingerprint(config.index.chunking_version)
+    );
+
+    const fetchedUrls: string[] = [];
+    const provider: WebIngestProvider = {
+      id: 'crawl4ai',
+      async assertAvailable() {},
+      async fetchPage(url, _options) {
+        fetchedUrls.push(url);
+
+        if (
+          url === 'https://example.com/docs/' ||
+          url === 'https://example.com/docs'
+        ) {
+          return {
+            requestedUrl: url,
+            finalUrl: 'https://example.com/docs/',
+            title: 'Docs Home',
+            canonicalUrl: null,
+            markdown:
+              '# Docs Home\n\nThis page links to the same page with secret query variants.',
+            html: '',
+            links: [
+              'https://example.com/docs/secure?token=alpha',
+              'https://example.com/docs/secure?token=beta',
+            ],
+            fetchModeUsed: 'get',
+          };
+        }
+
+        if (url.includes('/docs/secure?token=alpha')) {
+          return {
+            requestedUrl: url,
+            finalUrl: url,
+            title: 'Secure Alpha',
+            canonicalUrl: null,
+            markdown: '# Secure Alpha\n\nAlpha variant content.',
+            html: '',
+            links: [],
+            fetchModeUsed: 'get',
+          };
+        }
+
+        if (url.includes('/docs/secure?token=beta')) {
+          return {
+            requestedUrl: url,
+            finalUrl: url,
+            title: 'Secure Beta',
+            canonicalUrl: null,
+            markdown: '# Secure Beta\n\nBeta variant content.',
+            html: '',
+            links: [],
+            fetchModeUsed: 'get',
+          };
+        }
+
+        throw new Error(`unexpected crawl url: ${url}`);
+      },
+    };
+
+    try {
+      const result = await learnWebSource({
+        source: 'https://example.com/docs/',
+        config,
+        db,
+        scope: 'project',
+        scopePaths: createScopePaths(dbPath),
+        embeddingProvider,
+        webIngestProvider: provider,
+        rebuildTriggered: false,
+        rebuildReason: null,
+        crawl: true,
+        maxPages: 10,
+        maxDepth: 2,
+        fetchMode: 'get',
+      });
+
+      expect(result.documentsIndexed).toBe(2);
+      expect(result.crawledPages).toBe(2);
+      expect(result.failedPages).toBe(0);
+      expect(result.pageAttempts).toHaveLength(2);
+      expect(
+        fetchedUrls.filter((url) => url.includes('/docs/secure?token='))
+      ).toHaveLength(1);
+      expect(getDbStats(db).documents).toBe(2);
+    } finally {
+      closeDatabase(db);
+    }
+  });
 });
