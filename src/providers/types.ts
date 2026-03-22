@@ -71,6 +71,26 @@ export type WebFetchedPage = {
   fetchModeUsed: Exclude<WebFetchMode, 'auto'>;
 };
 
+export type WebPageFailure = {
+  url: string;
+  stage: 'fetch' | 'chunk' | 'embed';
+  reason: string;
+  error: string;
+  attempts: number;
+};
+
+export type WebPageAttempt = {
+  url: string;
+  stage: 'fetch';
+  attempts: number;
+};
+
+export type WebCrawlResult = {
+  pages: WebFetchedPage[];
+  pageFailures: WebPageFailure[];
+  pageAttempts: WebPageAttempt[];
+};
+
 export type WebIngestProvider = {
   readonly id: AppConfig['web']['ingest']['provider'];
   assertAvailable(): Promise<void>;
@@ -88,5 +108,5 @@ export type WebIngestProvider = {
       maxDepth: number;
       fetchMode: WebFetchMode;
     }
-  ): Promise<WebFetchedPage[]>;
+  ): Promise<WebCrawlResult>;
 };

@@ -12,8 +12,11 @@ import {
 import type {
   EmbeddingFingerprint,
   EmbeddingProvider,
+  WebCrawlResult,
   WebFetchedPage,
   WebIngestProvider,
+  WebPageAttempt,
+  WebPageFailure,
 } from '../../providers/types';
 import type { ProgressReporter } from '../../tui/types';
 import type { AppConfig, ScopeMode, WebFetchMode } from '../../types/config';
@@ -30,20 +33,6 @@ type CollectedWebPage = {
   title: string;
   content: string;
   contentHash: string;
-  attempts: number;
-};
-
-type WebPageFailure = {
-  url: string;
-  stage: 'fetch' | 'chunk' | 'embed';
-  reason: string;
-  error: string;
-  attempts: number;
-};
-
-type WebPageAttempt = {
-  url: string;
-  stage: 'fetch';
   attempts: number;
 };
 
@@ -408,13 +397,21 @@ async function collectPages(args: {
   }
 
   if (args.crawl && args.provider.crawl) {
-    const crawled = await args.provider.crawl(args.rootUrl, {
+    const crawled: WebCrawlResult = await args.provider.crawl(args.rootUrl, {
       maxPages: args.maxPages,
       maxDepth: args.maxDepth,
       fetchMode: args.fetchMode,
     });
 
-    for (const page of crawled) {
+    for (const failure of crawled.pageFailures) {
+      pageFailures.push(failure);
+    }
+
+    for (const attempt of crawled.pageAttempts) {
+      pageAttempts.push(attempt);
+    }
+
+    for (const page of crawled.pages) {
       const normalized = normalizeWebPageUrl(page.finalUrl);
       pages.push({
         sourceKey,
@@ -427,7 +424,6 @@ async function collectPages(args: {
         contentHash: sha256(page.markdown),
         attempts: 1,
       });
-      pageAttempts.push({ url: normalized, stage: 'fetch', attempts: 1 });
       crawlTask?.increment(1);
     }
 

@@ -5,8 +5,11 @@ import { dirname, extname, join } from 'node:path';
 import type { AppConfig, WebFetchMode } from '../types/config';
 import { createFetchWithPolicies } from '../utils/fetch';
 import type {
+  WebCrawlResult,
   WebFetchedPage,
   WebIngestProvider,
+  WebPageAttempt,
+  WebPageFailure,
   WebSearchProvider,
   WebSearchResult,
 } from './types';
@@ -693,7 +696,7 @@ class Crawl4AIWebIngestProvider implements WebIngestProvider {
       maxDepth: number;
       fetchMode: WebFetchMode;
     }
-  ): Promise<WebFetchedPage[]> {
+  ): Promise<WebCrawlResult> {
     await this.assertAvailable();
 
     const crawl4aiConfig = this.config.web.ingest.providers.crawl4ai;
@@ -724,7 +727,22 @@ class Crawl4AIWebIngestProvider implements WebIngestProvider {
       return filtered;
     };
 
-    const crawlByQueue = async (): Promise<WebFetchedPage[]> => {
+    const toCrawlResult = (pages: WebFetchedPage[]): WebCrawlResult => {
+      const scoped = toScoped(pages).slice(0, options.maxPages);
+      return {
+        pages: scoped,
+        pageFailures: [],
+        pageAttempts: scoped.map(
+          (page): WebPageAttempt => ({
+            url: page.finalUrl,
+            stage: 'fetch',
+            attempts: 1,
+          })
+        ),
+      };
+    };
+
+    const crawlByQueue = async (): Promise<WebCrawlResult> => {
       const visited = new Set<string>();
       const queue: Array<{ url: string; depth: number }> = [
         {
@@ -786,7 +804,7 @@ class Crawl4AIWebIngestProvider implements WebIngestProvider {
         }
       }
 
-      return toScoped(pages).slice(0, options.maxPages);
+      return toCrawlResult(pages);
     };
 
     const crawlOnce = async (mode: Crawl4AIMode, minGoodPages: number) => {
@@ -839,7 +857,17 @@ class Crawl4AIWebIngestProvider implements WebIngestProvider {
         );
       }
 
-      return scoped;
+      return {
+        pages: scoped,
+        pageFailures: [],
+        pageAttempts: scoped.map(
+          (page): WebPageAttempt => ({
+            url: page.finalUrl,
+            stage: 'fetch',
+            attempts: 1,
+          })
+        ),
+      };
     };
 
     if (options.fetchMode === 'get') {
@@ -849,7 +877,7 @@ class Crawl4AIWebIngestProvider implements WebIngestProvider {
       return crawlOnce('fetch', 0);
     }
 
-    let getPages: WebFetchedPage[] | null = null;
+    let getPages: WebCrawlResult | null = null;
     let firstError: unknown = null;
     try {
       getPages = await crawlOnce('get', 1);
@@ -859,7 +887,7 @@ class Crawl4AIWebIngestProvider implements WebIngestProvider {
       try {
         return await crawlOnce('fetch', 1);
       } catch {
-        if (getPages && getPages.length > 0) {
+        if (getPages && getPages.pages.length > 0) {
           return getPages;
         }
         throw firstError;
@@ -909,6 +937,63 @@ type CloudflareCrawlRecord = {
     url?: string;
   };
 };
+
+function classifyCloudflareCrawlRecordFailure(args: {
+  record: CloudflareCrawlRecord;
+  requestedUrl: string;
+}): WebPageFailure {
+  const status = args.record.status ?? 'errored';
+  const recordUrl = normalizeUrl(
+    args.record.url ?? args.record.metadata?.url ?? args.requestedUrl
+  );
+  const httpStatus = args.record.metadata?.status;
+
+  switch (status) {
+    case 'disallowed':
+      return {
+        url: recordUrl,
+        stage: 'fetch',
+        reason: 'disallowed',
+        error: 'Cloudflare crawl record disallowed by robots.txt',
+        attempts: 1,
+      };
+    case 'skipped':
+      return {
+        url: recordUrl,
+        stage: 'fetch',
+        reason: 'skipped',
+        error: 'Cloudflare crawl record skipped by crawl filters',
+        attempts: 1,
+      };
+    case 'cancelled':
+      return {
+        url: recordUrl,
+        stage: 'fetch',
+        reason: 'cancelled',
+        error: 'Cloudflare crawl record cancelled',
+        attempts: 1,
+      };
+    case 'errored':
+      return {
+        url: recordUrl,
+        stage: 'fetch',
+        reason: 'errored',
+        error:
+          typeof httpStatus === 'number'
+            ? `Cloudflare crawl record errored (http ${httpStatus})`
+            : 'Cloudflare crawl record errored',
+        attempts: 1,
+      };
+    default:
+      return {
+        url: recordUrl,
+        stage: 'fetch',
+        reason: status,
+        error: `Cloudflare crawl record status=${status}`,
+        attempts: 1,
+      };
+  }
+}
 
 type CloudflareCrawlJobStatusResponse = {
   success?: boolean;
@@ -1032,7 +1117,9 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
     return jobId;
   }
 
-  private async waitForCrawlJob(jobId: CloudflareCrawlJobId): Promise<void> {
+  private async waitForCrawlJob(
+    jobId: CloudflareCrawlJobId
+  ): Promise<CloudflareCrawlStatus> {
     const cloudflareConfig = this.config.web.ingest.providers.cloudflare;
     const accountId = cloudflareConfig.account_id.trim();
 
@@ -1074,17 +1161,13 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
         continue;
       }
 
-      if (status !== 'completed') {
-        throw new Error(`Cloudflare crawl job 未完成: status=${status}`);
-      }
-
-      return;
+      return status;
     }
 
     throw new Error('Cloudflare crawl job 轮询超时未完成');
   }
 
-  private async fetchCompletedRecords(
+  private async fetchCrawlRecords(
     jobId: CloudflareCrawlJobId,
     limit: number
   ): Promise<CloudflareCrawlRecord[]> {
@@ -1096,7 +1179,6 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
 
     while (records.length < limit) {
       const params = new URLSearchParams();
-      params.set('status', 'completed');
       params.set('limit', String(Math.min(1000, limit - records.length)));
       if (cursor !== null) {
         params.set('cursor', String(cursor));
@@ -1147,24 +1229,38 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
     maxPages: number;
     maxDepth: number;
     render: boolean;
-  }): Promise<WebFetchedPage[]> {
+  }): Promise<WebCrawlResult> {
     const jobId = await this.startCrawlJob(args);
     await this.waitForCrawlJob(jobId);
 
-    const rawRecords = await this.fetchCompletedRecords(jobId, args.maxPages);
+    const rawRecords = await this.fetchCrawlRecords(jobId, args.maxPages);
     const seen = new Set<string>();
 
     const pages: WebFetchedPage[] = [];
+    const pageFailures: WebPageFailure[] = [];
+    const pageAttempts: WebPageAttempt[] = [];
+
     for (const record of rawRecords) {
+      const recordUrl = normalizeUrl(
+        record.url ?? record.metadata?.url ?? args.url
+      );
+      pageAttempts.push({
+        url: recordUrl,
+        stage: 'fetch',
+        attempts: 1,
+      });
+
       if (record.status !== 'completed') {
-        continue;
-      }
-      const recordUrl = record.url ?? record.metadata?.url;
-      if (!recordUrl) {
+        pageFailures.push(
+          classifyCloudflareCrawlRecordFailure({
+            record,
+            requestedUrl: args.url,
+          })
+        );
         continue;
       }
 
-      const normalized = normalizeUrl(recordUrl);
+      const normalized = recordUrl;
       if (seen.has(normalized)) {
         continue;
       }
@@ -1187,7 +1283,11 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
       });
     }
 
-    return pages.slice(0, args.maxPages);
+    return {
+      pages: pages.slice(0, args.maxPages),
+      pageFailures,
+      pageAttempts,
+    };
   }
 
   private async fetchMarkdownPage(args: {
@@ -1313,7 +1413,7 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
       maxDepth: number;
       fetchMode: WebFetchMode;
     }
-  ): Promise<WebFetchedPage[]> {
+  ): Promise<WebCrawlResult> {
     await this.assertAvailable();
 
     const cloudflareConfig = this.config.web.ingest.providers.cloudflare;
@@ -1321,28 +1421,28 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
     const maxDepth = options.maxDepth;
 
     const tryRender = async (render: boolean, minGoodPages: number) => {
-      const pages = await this.runCrawlOnce({
+      const result = await this.runCrawlOnce({
         url,
         maxPages,
         maxDepth,
         render,
       });
 
-      const goodPages = pages.filter(
+      const goodPages = result.pages.filter(
         (page) => page.markdown.length >= cloudflareConfig.min_markdown_chars
       );
 
-      if (pages.length === 0) {
+      if (result.pages.length === 0) {
         throw new Error('Cloudflare crawl 未返回任何可用页面记录');
       }
 
       if (goodPages.length < minGoodPages) {
         throw new Error(
-          `Cloudflare crawl 返回内容过短页面过多 (good=${goodPages.length}/${pages.length}), render=${String(render)}`
+          `Cloudflare crawl 返回内容过短页面过多 (good=${goodPages.length}/${result.pages.length}), render=${String(render)}`
         );
       }
 
-      return pages;
+      return result;
     };
 
     if (options.fetchMode === 'get') {
@@ -1352,7 +1452,7 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
       return this.runCrawlOnce({ url, maxPages, maxDepth, render: true });
     }
 
-    let getPages: WebFetchedPage[] | null = null;
+    let getPages: WebCrawlResult | null = null;
     let firstError: unknown = null;
     try {
       getPages = await tryRender(false, 1);
@@ -1362,7 +1462,7 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
       try {
         return await tryRender(true, 1);
       } catch {
-        if (getPages && getPages.length > 0) {
+        if (getPages && getPages.pages.length > 0) {
           return getPages;
         }
         throw firstError;

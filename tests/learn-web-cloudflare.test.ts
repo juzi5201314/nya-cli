@@ -442,10 +442,18 @@ describe('learn web (cloudflare)', () => {
             },
             {
               url: `${job.url.replace(/\/+$/, '')}/guide`,
-              status: 'completed',
-              markdown:
-                '# Guide\n\nSecond page content is also long enough for indexing.',
+              status: 'skipped',
               metadata: { status: 200, title: 'Guide', url: `${job.url}` },
+            },
+            {
+              url: `${job.url.replace(/\/+$/, '')}/blocked`,
+              status: 'disallowed',
+              metadata: { status: 403, title: 'Blocked', url: `${job.url}` },
+            },
+            {
+              url: `${job.url.replace(/\/+$/, '')}/retry`,
+              status: 'cancelled',
+              metadata: { status: 499, title: 'Retry', url: `${job.url}` },
             },
           ];
 
@@ -502,8 +510,20 @@ describe('learn web (cloudflare)', () => {
         fetchMode: 'get',
       });
 
-      expect(result.crawledPages).toBe(2);
-      expect(getDbStats(db).documents).toBe(2);
+      expect(result.crawledPages).toBe(1);
+      expect(result.documentsIndexed).toBe(1);
+      expect(result.failedPages).toBe(3);
+      expect(result.pageFailures).toHaveLength(3);
+      expect(result.pageFailures.map((item) => item.reason).sort()).toEqual([
+        'cancelled',
+        'disallowed',
+        'skipped',
+      ]);
+      expect(result.pageFailures.every((item) => item.stage === 'fetch')).toBe(
+        true
+      );
+      expect(result.pageAttempts).toHaveLength(4);
+      expect(getDbStats(db).documents).toBe(1);
     } finally {
       server.stop(true);
       closeDatabase(db);
