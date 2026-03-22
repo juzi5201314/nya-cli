@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -238,6 +239,95 @@ function snapshotFiles(databasePath: string) {
   );
 }
 
+function createMinimalDoctorDb(args: {
+  databasePath: string;
+  includeIndexMetadata: boolean;
+  includeSearchTables: boolean;
+}): void {
+  const db = new Database(args.databasePath, {
+    create: true,
+    strict: true,
+    safeIntegers: true,
+  });
+
+  db.run(`
+    CREATE TABLE source_manifests (
+      source_key TEXT PRIMARY KEY,
+      source_kind TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      root_locator TEXT NOT NULL,
+      display_locator TEXT NOT NULL,
+      reingest_payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_ingested_at TEXT NOT NULL,
+      last_rebuild_status TEXT NOT NULL,
+      last_rebuild_error TEXT,
+      last_rebuild_attempts INTEGER NOT NULL,
+      last_rebuild_at TEXT,
+      last_rebuild_success_at TEXT
+    );
+  `);
+
+  if (args.includeIndexMetadata) {
+    db.run(`
+      CREATE TABLE index_metadata (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      INSERT INTO index_metadata(key, value, updated_at)
+      VALUES (
+        'embedding_fingerprint',
+        '{"provider":"google","model":"fixture-model","dimensions":4,"taskType":"RETRIEVAL_DOCUMENT","chunkingVersion":"v1","chunker":"tree-sitter"}',
+        '2026-03-22T00:00:00.000Z'
+      );
+    `);
+  }
+
+  if (args.includeSearchTables) {
+    db.run(`
+      CREATE TABLE documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_key TEXT NOT NULL,
+        source_kind TEXT NOT NULL,
+        source_locator TEXT NOT NULL,
+        canonical_locator TEXT,
+        path TEXT NOT NULL,
+        language TEXT NOT NULL,
+        title TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE chunks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        document_id INTEGER NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        section TEXT NOT NULL,
+        content TEXT NOT NULL,
+        token_estimate INTEGER NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE chunk_fts (
+        content TEXT NOT NULL,
+        path TEXT,
+        section TEXT
+      );
+
+      CREATE TABLE chunk_vec (
+        embedding BLOB
+      );
+    `);
+  }
+
+  db.close(false);
+}
+
 beforeEach(async () => {
   await rm(tempRoot, { recursive: true, force: true });
   await mkdir(tempRoot, { recursive: true });
@@ -339,5 +429,79 @@ describe('db doctor', () => {
     expect(json.needsRebuild).toBe(false);
     expect(json.rebuildReason).toBeNull();
     expect(json.failedSourceManifests).toBe(0);
+  });
+
+  test('reports degraded health when index metadata is missing from an existing DB', async () => {
+    const dbPath = join(tempRoot, '.nya-cli', 'index.sqlite');
+    await mkdir(join(tempRoot, '.nya-cli'), { recursive: true });
+    createMinimalDoctorDb({
+      databasePath: dbPath,
+      includeIndexMetadata: false,
+      includeSearchTables: true,
+    });
+
+    const result = await runCli(tempRoot, [
+      'db',
+      'doctor',
+      '--project',
+      '--json',
+      '--no-tui',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    const json = JSON.parse(result.stdout) as {
+      dbExists: boolean;
+      healthStatus: string;
+      needsRebuild: boolean;
+      rebuildReason: string | null;
+      fingerprint: unknown;
+      hasFts: boolean;
+      hasVector: boolean;
+    };
+
+    expect(json.dbExists).toBe(true);
+    expect(json.healthStatus).toBe('degraded');
+    expect(json.needsRebuild).toBe(true);
+    expect(json.rebuildReason).toBe('embedding fingerprint missing');
+    expect(json.fingerprint).toBeNull();
+    expect(json.hasFts).toBe(true);
+    expect(json.hasVector).toBe(true);
+  });
+
+  test('reports degraded health when search tables are missing from an existing DB', async () => {
+    const dbPath = join(tempRoot, '.nya-cli', 'index.sqlite');
+    await mkdir(join(tempRoot, '.nya-cli'), { recursive: true });
+    createMinimalDoctorDb({
+      databasePath: dbPath,
+      includeIndexMetadata: true,
+      includeSearchTables: false,
+    });
+
+    const result = await runCli(tempRoot, [
+      'db',
+      'doctor',
+      '--project',
+      '--json',
+      '--no-tui',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    const json = JSON.parse(result.stdout) as {
+      dbExists: boolean;
+      healthStatus: string;
+      needsRebuild: boolean;
+      rebuildReason: string | null;
+      fingerprint: unknown;
+      hasFts: boolean;
+      hasVector: boolean;
+    };
+
+    expect(json.dbExists).toBe(true);
+    expect(json.healthStatus).toBe('degraded');
+    expect(json.needsRebuild).toBe(true);
+    expect(json.rebuildReason).toBe('index bootstrap required');
+    expect(json.fingerprint).not.toBeNull();
+    expect(json.hasFts).toBe(false);
+    expect(json.hasVector).toBe(false);
   });
 });

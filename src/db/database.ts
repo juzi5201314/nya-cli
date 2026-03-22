@@ -187,6 +187,10 @@ function ensureMetadataTable(db: Database): void {
 }
 
 function getMetadata(db: Database, key: MetadataKey): StoredMetadata | null {
+  if (!tableExists(db, 'index_metadata')) {
+    return null;
+  }
+
   const row = db
     .query<StoredMetadata, [string]>(
       'SELECT key, value, updated_at FROM index_metadata WHERE key = ?1'
@@ -1360,15 +1364,41 @@ export function getDoctorReport(args: {
   }
 
   const stats = getDbStats(args.db);
+  const hasSearchTables =
+    tableExists(args.db, 'documents') &&
+    tableExists(args.db, 'chunks') &&
+    tableExists(args.db, 'chunk_fts') &&
+    tableExists(args.db, 'chunk_vec');
+
   const state = args.fingerprint
     ? inspectIndexState(args.db, args.fingerprint)
-    : {
-        needsRebuild: stats.failedSourceManifests > 0,
-        reason:
-          stats.failedSourceManifests > 0
-            ? 'one or more source rebuilds failed'
-            : null,
-      };
+    : (() => {
+        if (!hasSearchTables) {
+          return {
+            needsRebuild: true,
+            reason: 'index bootstrap required',
+          };
+        }
+
+        if (stats.failedSourceManifests > 0) {
+          return {
+            needsRebuild: true,
+            reason: 'one or more source rebuilds failed',
+          };
+        }
+
+        if (!stats.fingerprint) {
+          return {
+            needsRebuild: true,
+            reason: 'embedding fingerprint missing',
+          };
+        }
+
+        return {
+          needsRebuild: false,
+          reason: null,
+        };
+      })();
 
   return {
     dbPath: args.dbPath,
