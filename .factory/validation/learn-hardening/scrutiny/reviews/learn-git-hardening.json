@@ -1,0 +1,34 @@
+{
+  "featureId": "learn-git-hardening",
+  "reviewedAt": "2026-03-22T08:39:34Z",
+  "commitId": "f2e4ff5",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "Most learn-git hardening is in place: tracked-only indexing, structured partial-failure reporting, and git subprocess timeouts. One blocking edge case remains where a re-learn with only deleted/missing tracked files throws before replaceSourceData runs, so stale documents can survive.",
+    "issues": [
+      {
+        "file": "src/core/ingest/learn-git.ts",
+        "line": 121,
+        "severity": "blocking",
+        "description": "If every tracked file is missing or unreadable, this guard throws before replaceSourceData() executes. That leaves the previous source data in place, so a re-learn can fail to remove deleted files from the index even though the source has been cleared."
+      },
+      {
+        "file": "tests/learn-git-hardening.test.ts",
+        "line": 546,
+        "severity": "non_blocking",
+        "description": "The timeout regression is still marked test.skip, so the normal bun test suite does not guard the new git timeout path against regressions."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The learn-worker procedure assumes the timeout regression can be covered in bun test, but this feature had to fall back to a standalone runner because the timeout fixture was flaky under the test harness. The skill may need a note for timeout-sensitive subprocess tests.",
+      "evidence": "handoff.skillFeedback.followedProcedure=false; tests/learn-git-hardening.test.ts:546 uses test.skip for the timeout case"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed learn-git-hardening against the contract and found one blocking re-learn edge case plus one non-blocking test coverage gap."
+}

@@ -1,0 +1,34 @@
+{
+  "featureId": "learn-web-hardening",
+  "reviewedAt": "2026-03-22T16:50:00Z",
+  "commitId": "06f29774a158b5cc43deb64ed662490cc9c5a451",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "Crawl4AI hardening is broadly in place, including retries, timeout cleanup, and atomic single-page failure handling. Two blocking gaps remain: Cloudflare crawl still drops non-completed records without structured pageFailures, and crawl URL dedupe still keys on fragment-only normalization so secret-query variants can be treated as distinct pages before storage redaction.",
+    "issues": [
+      {
+        "file": "src/providers/web.ts",
+        "line": 1158,
+        "severity": "blocking",
+        "description": "`runCrawlOnce()` discards every record whose status is not `completed`. That means Cloudflare crawl runs never surface structured `pageFailures` for `errored`, `skipped`, `disallowed`, or `cancelled` records, so the feature still misses per-page failure reporting for one ingest path."
+      },
+      {
+        "file": "src/core/ingest/learn-web.ts",
+        "line": 330,
+        "severity": "blocking",
+        "description": "Crawl dedupe keys `visited` with `normalizeWebPageUrl()`, which strips fragments but does not redact sensitive query values. URLs that differ only by secret query params can be crawled as distinct pages, then collapse to the same redacted storage path and potentially collide during document insertion."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The learn-worker procedure says to add offline fixtures and tests first, but this feature needed implementation-first exploration to understand the crawl/provider interaction before the targeted regressions were obvious. The skill may need an explicit caveat for complex learn-web hardening work.",
+      "evidence": "handoff.skillFeedback.followedProcedure=false; the transcript skeleton shows the worker first inspected and patched the crawl/provider code paths, then added the regression tests once the failure modes were clear."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed learn-web-hardening against the contract and found two blocking gaps: Cloudflare crawl failures are still dropped, and secret-query URL normalization is only applied at storage time, not during crawl dedupe."
+}

@@ -1,0 +1,62 @@
+{
+  "milestone": "learn-hardening",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "bun test",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "bun run typecheck",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "bunx biome check .",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 0,
+    "failed": 2,
+    "failedFeatures": ["learn-git-hardening", "learn-web-hardening"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "learn-git-hardening",
+      "severity": "blocking",
+      "description": "Re-learn can throw before replaceSourceData() when every tracked file is missing or unreadable, leaving stale source data in the index."
+    },
+    {
+      "featureId": "learn-web-hardening",
+      "severity": "blocking",
+      "description": "Cloudflare crawl still drops non-completed records without structured pageFailures, so per-page failures are not surfaced for that ingest path."
+    },
+    {
+      "featureId": "learn-web-hardening",
+      "severity": "blocking",
+      "description": "Crawl dedupe uses fragment-only normalization and can treat secret-query variants as distinct pages before storage redaction."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "skill:learn-worker",
+      "suggestion": "Add a note that timeout-sensitive subprocess regressions may need a standalone runner when bun test fixtures are flaky, rather than forcing all coverage through the default harness.",
+      "evidence": "learn-git-hardening used a skipped timeout regression in bun test and the reviewer noted the timeout fixture was flaky under the test harness.",
+      "isSystemic": true
+    },
+    {
+      "target": "skill:learn-worker",
+      "suggestion": "Add a note that complex learn-web hardening may require implementation-first exploration before targeted offline fixtures become obvious, especially around crawl/provider interactions.",
+      "evidence": "learn-web-hardening required inspecting and patching the crawl/provider paths before the regression tests were fully clear.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}
