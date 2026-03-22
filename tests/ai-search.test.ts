@@ -9,6 +9,7 @@ import { learnGitSource } from '../src/core/ingest/learn-git';
 import { aiSearchIndex } from '../src/core/search/ai-search';
 import {
   closeDatabase,
+  findDocumentsByPath,
   initializeEmptyIndex,
   openDatabase,
 } from '../src/db/database';
@@ -21,6 +22,7 @@ import type {
 import type { AppConfig } from '../src/types/config';
 
 const tempRoot = '/tmp/nya-cli-ai-search-tests';
+const cliEntrypoint = join(import.meta.dir, '..', 'src', 'index.ts');
 
 const config: AppConfig = {
   app: {
@@ -233,6 +235,147 @@ class FakeLlmProvider implements LlmProvider {
   }
 }
 
+class ScriptedLlmProvider implements LlmProvider {
+  readonly id = 'google' as const;
+  readonly model = 'fake-llm';
+
+  readonly plannerPrompts: string[] = [];
+  readonly answerPrompts: string[] = [];
+
+  private plannerCallCount = 0;
+
+  constructor(
+    private readonly plannerResponses: Array<{
+      enough: boolean;
+      rationale: string;
+      queries: string[];
+    }>,
+    private readonly answerResponse: {
+      answer: string;
+      citationIds: number[];
+    },
+    private readonly structuredOutputFallbackUsed = false
+  ) {}
+
+  async generateText(): Promise<{ text: string }> {
+    return {
+      text: 'unused',
+    };
+  }
+
+  async generateObject<T>(args: {
+    system: string;
+    prompt: string;
+    schema: z.ZodType<T>;
+    schemaName?: string;
+    schemaDescription?: string;
+  }): Promise<T> {
+    return (await this.generateObjectWithFallback(args)).object;
+  }
+
+  async generateObjectWithFallback<T>(args: {
+    system: string;
+    prompt: string;
+    schema: z.ZodType<T>;
+    schemaName?: string;
+    schemaDescription?: string;
+  }): Promise<{
+    object: T;
+    structuredOutputFallbackUsed: boolean;
+  }> {
+    if (args.schemaName === 'ai_search_planner') {
+      this.plannerPrompts.push(args.prompt);
+      const response =
+        this.plannerResponses[
+          Math.min(this.plannerCallCount, this.plannerResponses.length - 1)
+        ] ?? this.plannerResponses[this.plannerResponses.length - 1];
+      if (!response) {
+        throw new Error('plannerResponses must contain at least one response');
+      }
+      this.plannerCallCount += 1;
+
+      return {
+        object: {
+          enough: response.enough,
+          rationale: response.rationale,
+          queries: response.queries,
+        } as T,
+        structuredOutputFallbackUsed: false,
+      };
+    }
+
+    this.answerPrompts.push(args.prompt);
+    return {
+      object: this.answerResponse as T,
+      structuredOutputFallbackUsed: this.structuredOutputFallbackUsed,
+    };
+  }
+}
+
+class TieBreakingEmbeddingProvider implements EmbeddingProvider {
+  readonly id = 'google' as const;
+  readonly model = 'fake-tie-embedding';
+  readonly dimensions = 2;
+
+  private encode(text: string): number[] {
+    const normalized = text.toLowerCase();
+    return [
+      normalized.includes('alpha-only-token') ? 10 : 0,
+      normalized.includes('beta-only-token') ? 10 : 0,
+    ];
+  }
+
+  async embedDocuments(values: string[]): Promise<number[][]> {
+    return values.map((value) => this.encode(value));
+  }
+
+  async embedQuery(value: string): Promise<number[]> {
+    return this.encode(value);
+  }
+
+  fingerprint(chunkingVersion: string): EmbeddingFingerprint {
+    return {
+      provider: this.id,
+      model: this.model,
+      dimensions: this.dimensions,
+      taskType: 'RETRIEVAL_DOCUMENT',
+      chunkingVersion,
+      chunker: 'tree-sitter',
+    };
+  }
+}
+
+async function runGetByDocumentId(
+  cwd: string,
+  documentId: number
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  const proc = Bun.spawn(
+    [
+      'bun',
+      'run',
+      cliEntrypoint,
+      'get',
+      '--document-id',
+      String(documentId),
+      '--project',
+      '--json',
+    ],
+    {
+      cwd,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    }
+  );
+
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+
+  return { exitCode, stdout, stderr };
+}
+
 class FallbackLlmProvider implements LlmProvider {
   readonly id = 'google' as const;
   readonly model = 'fake-llm';
@@ -314,11 +457,14 @@ describe('ai-search', () => {
       citations: [
         {
           evidenceId: 1,
+          chunkId: 10,
           documentId: 12,
           sourceKey: '/repo',
           path: 'README.md',
           section: 'Intro',
           snippet: 'snippet',
+          excerpt: 'snippet excerpt',
+          quote: 'snippet',
           score: 0.9,
           sourceKind: 'local_git',
         },
@@ -326,11 +472,13 @@ describe('ai-search', () => {
       evidence: [
         {
           evidenceId: 1,
+          chunkId: 10,
           documentId: 12,
           sourceKey: '/repo',
           path: 'README.md',
           section: 'Intro',
           snippet: 'snippet',
+          excerpt: 'snippet excerpt',
           score: 0.9,
           sourceKind: 'local_git',
         },
@@ -404,11 +552,217 @@ describe('ai-search', () => {
     expect(result.citations.length).toBeGreaterThan(0);
     expect(result.citations[0]?.documentId).toBeGreaterThan(0);
     expect(result.citations[0]?.sourceKey).toBe(repoDir);
-    expect(result.evidence[0]?.documentId).toBeGreaterThan(0);
+    expect(result.evidence.some((item) => item.documentId > 0)).toBe(true);
+    expect(
+      result.evidence.some((item) => item.excerpt.includes('Gemini'))
+    ).toBe(true);
     expect(result.structuredOutputFallbackUsed).toBe(false);
+    expect(
+      result.citations.some((item) => item.excerpt.includes('Gemini'))
+    ).toBe(true);
     closeDatabase(db);
   });
 
+  test('includes chunk excerpts in prompts and JSON output', async () => {
+    const repoDir = join(tempRoot, 'repo-excerpts');
+    const dbDir = join(tempRoot, 'db-excerpts');
+    await mkdir(repoDir, { recursive: true });
+
+    const sentinel = 'EXCERPT_SENTINEL_ALPHA';
+    const longBody = [
+      '# Search',
+      '',
+      'Gemini and Tavily help agents search the knowledge base.',
+      'This chunk is intentionally long so the excerpt stays beyond the snippet window.',
+      'x'.repeat(260),
+      sentinel,
+    ].join('\n');
+
+    await writeFile(join(repoDir, 'README.md'), longBody);
+
+    await runGit(repoDir, ['init']);
+    await runGit(repoDir, ['config', 'user.email', 'test@example.com']);
+    await runGit(repoDir, ['config', 'user.name', 'Test User']);
+    await runGit(repoDir, ['add', '.']);
+    await runGit(repoDir, ['commit', '-m', 'initial']);
+
+    const db = await openDatabase(join(dbDir, 'index.sqlite'));
+    const embeddingProvider = new FakeEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      embeddingProvider.fingerprint(config.index.chunking_version)
+    );
+
+    await learnGitSource({
+      source: repoDir,
+      config,
+      db,
+      scope: 'project',
+      scopePaths: {
+        scope: 'project',
+        projectDirName: '.nya-cli',
+        databasePath: join(dbDir, 'index.sqlite'),
+        databaseDir: dbDir,
+        remoteCacheDir: join(tempRoot, 'cache-excerpts'),
+      },
+      embeddingProvider,
+      rebuildTriggered: false,
+      rebuildReason: null,
+    });
+
+    const llmProvider = new ScriptedLlmProvider(
+      [
+        {
+          enough: false,
+          rationale: 'Need to inspect the evidence.',
+          queries: ['Gemini Tavily agents'],
+        },
+        {
+          enough: true,
+          rationale: 'Enough evidence is available.',
+          queries: [],
+        },
+      ],
+      {
+        answer: 'Gemini and Tavily support agent search.',
+        citationIds: [1],
+      }
+    );
+
+    const result = await aiSearchIndex({
+      db,
+      embeddingProvider,
+      llmProvider,
+      query: 'Gemini Tavily agents',
+      limit: 5,
+      scope: 'project',
+      databasePath: join(dbDir, 'index.sqlite'),
+      maxSteps: 2,
+      maxQueriesPerStep: 2,
+      maxEvidenceChunks: 5,
+    });
+
+    expect(llmProvider.plannerPrompts).toHaveLength(2);
+    expect(llmProvider.plannerPrompts[1]).toContain(sentinel);
+    expect(llmProvider.answerPrompts).toHaveLength(1);
+    expect(llmProvider.answerPrompts[0]).toContain(sentinel);
+    expect(result.evidence[0]?.chunkId).toBeGreaterThan(0);
+    expect(
+      result.evidence.some((item) => item.excerpt.includes(sentinel))
+    ).toBe(true);
+    expect(result.citations.some((item) => item.excerpt.length > 0)).toBe(true);
+    expect(result.citations[0]?.quote).toBe(result.citations[0]?.snippet);
+
+    closeDatabase(db);
+  });
+
+  test('orders evidence deterministically and citations can be fetched with get', async () => {
+    const projectDir = join(tempRoot, 'repo-tie-break');
+    const dbDir = join(projectDir, '.nya-cli');
+    const dbPath = join(dbDir, 'index.sqlite');
+    await mkdir(projectDir, { recursive: true });
+
+    await writeFile(
+      join(projectDir, 'A.md'),
+      ['# Alpha', '', 'alpha-only-token', 'alpha-only-token'].join('\n')
+    );
+    await writeFile(
+      join(projectDir, 'B.md'),
+      ['# Beta', '', 'beta-only-token', 'beta-only-token'].join('\n')
+    );
+
+    await runGit(projectDir, ['init']);
+    await runGit(projectDir, ['config', 'user.email', 'test@example.com']);
+    await runGit(projectDir, ['config', 'user.name', 'Test User']);
+    await runGit(projectDir, ['add', '.']);
+    await runGit(projectDir, ['commit', '-m', 'initial']);
+
+    const db = await openDatabase(dbPath);
+    const embeddingProvider = new TieBreakingEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      embeddingProvider.fingerprint(config.index.chunking_version)
+    );
+
+    await learnGitSource({
+      source: projectDir,
+      config,
+      db,
+      scope: 'project',
+      scopePaths: {
+        scope: 'project',
+        projectDirName: '.nya-cli',
+        databasePath: dbPath,
+        databaseDir: dbDir,
+        remoteCacheDir: join(tempRoot, 'cache-tie-break'),
+      },
+      embeddingProvider,
+      rebuildTriggered: false,
+      rebuildReason: null,
+    });
+
+    const alphaDocumentId = findDocumentsByPath(db, 'A.md')[0]?.documentId;
+    const betaDocumentId = findDocumentsByPath(db, 'B.md')[0]?.documentId;
+
+    if (alphaDocumentId === undefined || betaDocumentId === undefined) {
+      throw new Error('expected document ids for tie-break fixture');
+    }
+
+    const alphaId = alphaDocumentId;
+    const betaId = betaDocumentId;
+
+    const llmProvider = new ScriptedLlmProvider(
+      [
+        {
+          enough: false,
+          rationale: 'Need both evidence items.',
+          queries: ['beta-only-token', 'alpha-only-token'],
+        },
+      ],
+      {
+        answer: 'Both documents matter.',
+        citationIds: [1, 2],
+      }
+    );
+
+    const result = await aiSearchIndex({
+      db,
+      embeddingProvider,
+      llmProvider,
+      query: 'beta-only-token alpha-only-token',
+      limit: 5,
+      scope: 'project',
+      databasePath: dbPath,
+      maxSteps: 1,
+      maxQueriesPerStep: 2,
+      maxEvidenceChunks: 5,
+    });
+
+    expect(result.evidence.map((item) => item.documentId)).toEqual([
+      alphaId,
+      betaId,
+    ]);
+    expect(new Set(result.evidence.map((item) => item.chunkId)).size).toBe(
+      result.evidence.length
+    );
+
+    for (const citation of result.citations.slice(0, 3)) {
+      const getResult = await runGetByDocumentId(
+        projectDir,
+        citation.documentId
+      );
+      expect(getResult.exitCode).toBe(0);
+      expect(getResult.stderr).toBe('');
+
+      const payload = JSON.parse(getResult.stdout) as {
+        document: { documentId: number; path: string };
+      };
+      expect(payload.document.documentId).toBe(citation.documentId);
+      expect(payload.document.path).toBe(citation.path);
+    }
+
+    closeDatabase(db);
+  });
   test('propagates structured output fallback through ai-search responses', async () => {
     const repoDir = join(tempRoot, 'repo-fallback');
     const dbDir = join(tempRoot, 'db-fallback');

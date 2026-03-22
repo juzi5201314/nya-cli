@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import { z } from 'zod';
 
+import { getSearchHits } from '../../db/database';
 import type { EmbeddingProvider, LlmProvider } from '../../providers/types';
 import type { ScopeMode } from '../../types/config';
 import { redactText } from '../../utils/redaction';
@@ -21,6 +22,24 @@ type AnswerResult = {
 
 type EvidenceRecord = SearchResult & {
   evidenceId: number;
+  excerpt: string;
+};
+
+type EvidenceOutput = {
+  evidenceId: number;
+  chunkId: number;
+  documentId: number;
+  sourceKey: string;
+  path: string;
+  section: string;
+  snippet: string;
+  excerpt: string;
+  score: number;
+  sourceKind: string;
+};
+
+type CitationOutput = EvidenceOutput & {
+  quote: string;
 };
 
 export type AiSearchResponse = {
@@ -30,26 +49,8 @@ export type AiSearchResponse = {
   answer: string;
   usedQueries: string[];
   iterations: number;
-  citations: Array<{
-    evidenceId: number;
-    documentId: number;
-    sourceKey: string;
-    path: string;
-    section: string;
-    snippet: string;
-    score: number;
-    sourceKind: string;
-  }>;
-  evidence: Array<{
-    evidenceId: number;
-    documentId: number;
-    sourceKey: string;
-    path: string;
-    section: string;
-    snippet: string;
-    score: number;
-    sourceKind: string;
-  }>;
+  citations: CitationOutput[];
+  evidence: EvidenceOutput[];
   structuredOutputFallbackUsed: boolean;
 };
 
@@ -72,9 +73,9 @@ function formatEvidence(evidence: EvidenceRecord[]): string {
   return evidence
     .map(
       (item) =>
-        `[${item.evidenceId}] path=${redactText(item.path)} section=${redactText(item.section)} score=${item.score.toFixed(
+        `[${item.evidenceId}] chunk=${item.chunkId} doc=${item.documentId} path=${redactText(item.path)} section=${redactText(item.section)} score=${item.score.toFixed(
           6
-        )}\n${redactText(item.snippet)}`
+        )}\nexcerpt:\n${redactText(item.excerpt)}`
     )
     .join('\n\n');
 }
@@ -101,14 +102,21 @@ function dedupeQueries(queries: string[], usedQueries: string[]): string[] {
 
 function mergeEvidence(
   evidenceMap: Map<number, EvidenceRecord>,
-  results: SearchResult[]
+  results: SearchResult[],
+  excerptMap: Map<number, string>
 ): void {
   for (const item of results) {
+    const excerpt = excerptMap.get(item.chunkId);
+    if (excerpt === undefined) {
+      continue;
+    }
+
     const existing = evidenceMap.get(item.chunkId);
     if (!existing || item.score > existing.score) {
       evidenceMap.set(item.chunkId, {
         evidenceId: existing?.evidenceId ?? evidenceMap.size + 1,
         ...item,
+        excerpt,
       });
     }
   }
@@ -119,7 +127,18 @@ function rankEvidence(
   maxEvidenceChunks: number
 ): EvidenceRecord[] {
   return [...evidenceMap.values()]
-    .sort((left, right) => right.score - left.score)
+    .sort((left, right) => {
+      const scoreDelta = right.score - left.score;
+      if (Math.abs(scoreDelta) > 1e-12) {
+        return scoreDelta;
+      }
+
+      if (left.documentId !== right.documentId) {
+        return left.documentId - right.documentId;
+      }
+
+      return left.chunkId - right.chunkId;
+    })
     .slice(0, maxEvidenceChunks)
     .map((item, index) => ({
       ...item,
@@ -267,7 +286,16 @@ export async function aiSearchIndex(args: {
         scope: args.scope,
         databasePath: args.databasePath,
       });
-      mergeEvidence(evidenceMap, results.results);
+
+      const searchHits = getSearchHits(
+        args.db,
+        results.results.map((result) => result.chunkId)
+      );
+      const excerptMap = new Map(
+        searchHits.map((hit) => [hit.id, hit.content.trim()])
+      );
+
+      mergeEvidence(evidenceMap, results.results, excerptMap);
     }
 
     iterations = step + 1;
@@ -298,21 +326,26 @@ export async function aiSearchIndex(args: {
     iterations,
     citations: citations.map((item) => ({
       evidenceId: item.evidenceId,
+      chunkId: item.chunkId,
       documentId: item.documentId,
       sourceKey: item.sourceKey,
       path: item.path,
       section: item.section,
       snippet: item.snippet,
+      excerpt: item.excerpt,
+      quote: item.snippet,
       score: item.score,
       sourceKind: item.sourceKind,
     })),
     evidence: rankedEvidence.map((item) => ({
       evidenceId: item.evidenceId,
+      chunkId: item.chunkId,
       documentId: item.documentId,
       sourceKey: item.sourceKey,
       path: item.path,
       section: item.section,
       snippet: item.snippet,
+      excerpt: item.excerpt,
       score: item.score,
       sourceKind: item.sourceKind,
     })),
