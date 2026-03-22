@@ -32,6 +32,17 @@ export type LearnGitResult = {
   fingerprint: EmbeddingFingerprint;
 };
 
+export class LearnGitNoReadableDocumentsError extends Error {
+  readonly code = 'LEARN_GIT_NO_READABLE_DOCUMENTS';
+
+  constructor(readonly result: LearnGitResult) {
+    super(
+      `learn git 失败：没有可索引的文档；fileFailures=${result.fileFailures.length}; skippedFiles=${result.skippedFiles.length}`
+    );
+    this.name = 'LearnGitNoReadableDocumentsError';
+  }
+}
+
 export async function learnGitSource(args: {
   source: string;
   config: AppConfig;
@@ -118,12 +129,6 @@ export async function learnGitSource(args: {
   }
   fileTask?.stop();
 
-  if (preparedDocuments.length === 0 && fileFailures.length > 0) {
-    throw new Error(
-      `learn git 失败：没有可索引的文档；fileFailures=${fileFailures.length}; skippedFiles=${repoScan.skippedFiles.length}`
-    );
-  }
-
   const counts = replaceSourceData({
     db: args.db,
     sourceKey: resolvedSource.sourceKey,
@@ -147,7 +152,7 @@ export async function learnGitSource(args: {
     });
   }
 
-  return {
+  const result: LearnGitResult = {
     source: args.source,
     sourceKind: resolvedSource.sourceKind,
     scope: args.scope,
@@ -163,4 +168,10 @@ export async function learnGitSource(args: {
       args.config.index.chunking_version
     ),
   };
+
+  if (result.documentsIndexed === 0 && fileFailures.length > 0) {
+    throw new LearnGitNoReadableDocumentsError(result);
+  }
+
+  return result;
 }

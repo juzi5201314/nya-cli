@@ -1,4 +1,7 @@
-import { learnGitSource } from '../core/ingest/learn-git';
+import {
+  LearnGitNoReadableDocumentsError,
+  learnGitSource,
+} from '../core/ingest/learn-git';
 import { learnWebSource } from '../core/ingest/learn-web';
 import { createInkProgressReporter } from '../tui/ink-progress';
 import type { WebFetchMode } from '../types/config';
@@ -44,6 +47,9 @@ export async function runLearnGit(args: {
 
     if (args.asJson) {
       printOutput(result, true);
+      if (result.documentsIndexed === 0 && result.fileFailures.length > 0) {
+        process.exitCode = 1;
+      }
       return;
     }
 
@@ -62,6 +68,39 @@ export async function runLearnGit(args: {
       ].join('\n'),
       false
     );
+
+    if (result.documentsIndexed === 0 && result.fileFailures.length > 0) {
+      process.exitCode = 1;
+    }
+  } catch (error) {
+    if (error instanceof LearnGitNoReadableDocumentsError) {
+      const result = error.result;
+
+      if (args.asJson) {
+        printOutput(result, true);
+      } else {
+        printOutput(
+          [
+            `source: ${result.source}`,
+            `source_kind: ${result.sourceKind}`,
+            `scope: ${result.scope}`,
+            `database: ${result.databasePath}`,
+            `documents_indexed: ${result.documentsIndexed}`,
+            `chunks_indexed: ${result.chunksIndexed}`,
+            `skipped_symlinks: ${result.skippedSymlinks}`,
+            `skipped_files: ${result.skippedFiles.length}`,
+            `file_failures: ${result.fileFailures.length}`,
+            `rebuild_triggered: ${result.rebuildTriggered}`,
+          ].join('\n'),
+          false
+        );
+      }
+
+      process.exitCode = 1;
+      return;
+    }
+
+    throw error;
   } finally {
     progress.stopAll();
     closeDatabase(runtime.db);

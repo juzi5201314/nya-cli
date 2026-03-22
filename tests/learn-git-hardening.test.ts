@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { learnGitSource } from '../src/core/ingest/learn-git';
+import {
+  LearnGitNoReadableDocumentsError,
+  learnGitSource,
+} from '../src/core/ingest/learn-git';
+import { searchIndex } from '../src/core/search/search-index';
 import {
   closeDatabase,
   findDocumentsByPath,
@@ -319,6 +323,106 @@ describe('learn git hardening', () => {
       expect(getDbStats(db).documents).toBe(1);
       expect(findDocumentsByPath(db, 'guide.ts', repoDir)).toHaveLength(0);
       expect(findDocumentsByPath(db, 'README.md', repoDir)).toHaveLength(1);
+    } finally {
+      closeDatabase(db);
+    }
+  });
+
+  test('relearn clears source data when every tracked file is missing', async () => {
+    const repoDir = join(tempRoot, 'missing-repo');
+    const dbDir = join(tempRoot, 'missing-db');
+    const dbPath = join(dbDir, 'index.sqlite');
+    await mkdir(repoDir, { recursive: true });
+
+    await writeFile(
+      join(repoDir, 'README.md'),
+      '# Alpha\n\nThis file carries tracked-token for stable indexing.\n'
+    );
+    await writeFile(
+      join(repoDir, 'guide.ts'),
+      'export const deletedMarker = "beta456deleted for removal";\n'
+    );
+
+    await runGit(repoDir, ['init']);
+    await runGit(repoDir, ['config', 'user.email', 'test@example.com']);
+    await runGit(repoDir, ['config', 'user.name', 'Test User']);
+    await runGit(repoDir, ['add', '.']);
+    await runGit(repoDir, ['commit', '-m', 'initial']);
+
+    const db = await openDatabase(dbPath);
+    try {
+      const provider = new FakeEmbeddingProvider();
+      initializeEmptyIndex(
+        db,
+        provider.fingerprint(baseConfig.index.chunking_version)
+      );
+
+      const first = await learnGitSource({
+        source: repoDir,
+        config: baseConfig,
+        db,
+        scope: 'project',
+        scopePaths: {
+          scope: 'project',
+          projectDirName: '.nya-cli',
+          databasePath: dbPath,
+          databaseDir: dbDir,
+          remoteCacheDir: join(tempRoot, 'cache'),
+        },
+        embeddingProvider: provider,
+        rebuildTriggered: false,
+        rebuildReason: null,
+      });
+
+      expect(first.documentsIndexed).toBe(2);
+
+      await rm(join(repoDir, 'README.md'));
+      await rm(join(repoDir, 'guide.ts'));
+
+      try {
+        await learnGitSource({
+          source: repoDir,
+          config: baseConfig,
+          db,
+          scope: 'project',
+          scopePaths: {
+            scope: 'project',
+            projectDirName: '.nya-cli',
+            databasePath: dbPath,
+            databaseDir: dbDir,
+            remoteCacheDir: join(tempRoot, 'cache'),
+          },
+          embeddingProvider: provider,
+          rebuildTriggered: false,
+          rebuildReason: null,
+        });
+
+        throw new Error('expected learnGitSource to fail');
+      } catch (error) {
+        expect(error).toBeInstanceOf(LearnGitNoReadableDocumentsError);
+        const failure = error as LearnGitNoReadableDocumentsError;
+        expect(failure.result.documentsIndexed).toBe(0);
+        expect(failure.result.fileFailures).toHaveLength(2);
+        expect(
+          failure.result.fileFailures.every((item) => item.stage === 'stat')
+        ).toBe(true);
+        expect(failure.result.skippedFiles).toHaveLength(0);
+      }
+
+      expect(getDbStats(db).documents).toBe(0);
+      expect(findDocumentsByPath(db, 'README.md', repoDir)).toHaveLength(0);
+      expect(findDocumentsByPath(db, 'guide.ts', repoDir)).toHaveLength(0);
+
+      const search = await searchIndex({
+        db,
+        embeddingProvider: provider,
+        query: 'deleted-token',
+        limit: 5,
+        scope: 'project',
+        databasePath: dbPath,
+      });
+
+      expect(search.results).toHaveLength(0);
     } finally {
       closeDatabase(db);
     }
