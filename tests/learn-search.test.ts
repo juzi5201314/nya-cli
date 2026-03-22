@@ -180,6 +180,44 @@ class FakeEmbeddingProvider implements EmbeddingProvider {
   }
 }
 
+class TieEmbeddingProvider implements EmbeddingProvider {
+  readonly id = 'google' as const;
+  readonly model = 'tie-provider';
+  readonly dimensions = 2;
+
+  private encode(value: string): number[] {
+    const normalized = value.toLowerCase();
+    if (normalized.includes('vec1')) {
+      return [10, 0];
+    }
+
+    if (normalized.includes('vec2')) {
+      return [0, 10];
+    }
+
+    return [10, 0];
+  }
+
+  async embedDocuments(values: string[]): Promise<number[][]> {
+    return values.map((value) => this.encode(value));
+  }
+
+  async embedQuery(): Promise<number[]> {
+    return [10, 0];
+  }
+
+  fingerprint(chunkingVersion: string): EmbeddingFingerprint {
+    return {
+      provider: this.id,
+      model: this.model,
+      dimensions: this.dimensions,
+      taskType: 'RETRIEVAL_DOCUMENT',
+      chunkingVersion,
+      chunker: 'tree-sitter',
+    };
+  }
+}
+
 async function runGit(cwd: string, args: string[]): Promise<void> {
   const proc = Bun.spawn(['git', ...args], {
     cwd,
@@ -629,6 +667,305 @@ describe('learn and search', () => {
       'src/native/main.c',
     ]);
     expect(normalized).toEqual(['.ts', '.md']);
+
+    closeDatabase(db);
+  });
+
+  test('dedupes shared hits across retrievers and reports hybrid usage', async () => {
+    const dbDir = join(tempRoot, 'db');
+    const dbPath = join(dbDir, 'index.sqlite');
+    const db = await openDatabase(dbPath);
+    const provider = new FakeEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      provider.fingerprint(baseConfig.index.chunking_version)
+    );
+
+    replaceSourceData({
+      db,
+      sourceKey: 'repo',
+      documents: [
+        {
+          document: {
+            sourceKey: 'repo',
+            sourceKind: 'local_git',
+            sourceLocator: '/repo',
+            canonicalLocator: null,
+            path: 'docs/guide.md',
+            language: 'md',
+            title: 'guide.md',
+            contentHash: 'doc-10',
+            content: 'vector search for agents and git workflows',
+          },
+          chunks: [
+            {
+              chunkIndex: 0,
+              section: 'guide.md',
+              content: 'vector search for agents and git workflows',
+              tokenEstimate: 10,
+              contentHash: 'chunk-10',
+            },
+          ],
+          embedding: [[10, 10, 10, 10]],
+        },
+        {
+          document: {
+            sourceKey: 'repo',
+            sourceKind: 'local_git',
+            sourceLocator: '/repo',
+            canonicalLocator: null,
+            path: 'src/guide.ts',
+            language: 'ts',
+            title: 'guide.ts',
+            contentHash: 'doc-11',
+            content: 'vector search for agents and git workflows',
+          },
+          chunks: [
+            {
+              chunkIndex: 0,
+              section: 'guide.ts',
+              content: 'vector search for agents and git workflows',
+              tokenEstimate: 10,
+              contentHash: 'chunk-11',
+            },
+          ],
+          embedding: [[10, 10, 10, 10]],
+        },
+      ],
+    });
+
+    const searchResult = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'vector search',
+      limit: 5,
+      scope: 'project',
+      databasePath: dbPath,
+    });
+
+    const chunkIds = searchResult.results.map((item) => item.chunkId);
+
+    expect(new Set(chunkIds).size).toBe(chunkIds.length);
+    expect(searchResult.retrieversUsed).toEqual(['vector', 'fts']);
+    expect(searchResult.vectorCandidates).toBeGreaterThan(0);
+    expect(searchResult.ftsCandidates).toBeGreaterThan(0);
+    expect(searchResult.rrfUsed).toBe(true);
+
+    closeDatabase(db);
+  });
+
+  test('oversamples to avoid underfill after extension filtering', async () => {
+    const dbDir = join(tempRoot, 'db');
+    const dbPath = join(dbDir, 'index.sqlite');
+    const db = await openDatabase(dbPath);
+    const provider = new FakeEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      provider.fingerprint(baseConfig.index.chunking_version)
+    );
+
+    const documents = [] as Array<{
+      document: {
+        sourceKey: string;
+        sourceKind: 'local_git';
+        sourceLocator: string;
+        canonicalLocator: null;
+        path: string;
+        language: string;
+        title: string;
+        contentHash: string;
+        content: string;
+      };
+      chunks: Array<{
+        chunkIndex: number;
+        section: string;
+        content: string;
+        tokenEstimate: number;
+        contentHash: string;
+      }>;
+      embedding: number[][];
+    }>;
+
+    for (let index = 0; index < 30; index += 1) {
+      const path = `docs/overflow-${String(index).padStart(2, '0')}.md`;
+      const content = `vector search md document ${index}`;
+      documents.push({
+        document: {
+          sourceKey: 'repo',
+          sourceKind: 'local_git',
+          sourceLocator: '/repo',
+          canonicalLocator: null,
+          path,
+          language: 'md',
+          title: `overflow-${index}.md`,
+          contentHash: `doc-md-${index}`,
+          content,
+        },
+        chunks: [
+          {
+            chunkIndex: 0,
+            section: `overflow-${index}.md`,
+            content,
+            tokenEstimate: 10,
+            contentHash: `chunk-md-${index}`,
+          },
+        ],
+        embedding: [[10, 10, 0, 0]],
+      });
+    }
+
+    for (let index = 0; index < 8; index += 1) {
+      const path = `src/match-${String(index).padStart(2, '0')}.ts`;
+      const content = `vector search ts document ${index}`;
+      documents.push({
+        document: {
+          sourceKey: 'repo',
+          sourceKind: 'local_git',
+          sourceLocator: '/repo',
+          canonicalLocator: null,
+          path,
+          language: 'ts',
+          title: `match-${index}.ts`,
+          contentHash: `doc-ts-${index}`,
+          content,
+        },
+        chunks: [
+          {
+            chunkIndex: 0,
+            section: `match-${index}.ts`,
+            content,
+            tokenEstimate: 10,
+            contentHash: `chunk-ts-${index}`,
+          },
+        ],
+        embedding: [[10, 10, 0, 0]],
+      });
+    }
+
+    replaceSourceData({
+      db,
+      sourceKey: 'repo',
+      documents,
+    });
+
+    const searchResult = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'vector search',
+      extensions: ['ts'],
+      limit: 5,
+      scope: 'project',
+      databasePath: dbPath,
+    });
+
+    expect(searchResult.results).toHaveLength(5);
+    expect(
+      searchResult.results.every((item) => item.path.endsWith('.ts'))
+    ).toBe(true);
+    expect(searchResult.retrieversUsed).toEqual(['vector', 'fts']);
+    expect(searchResult.vectorCandidates).toBeGreaterThan(0);
+    expect(searchResult.ftsCandidates).toBeGreaterThan(0);
+    expect(searchResult.rrfUsed).toBe(true);
+
+    closeDatabase(db);
+  });
+
+  test('uses deterministic tie-break ordering when scores are effectively tied', async () => {
+    const dbDir = join(tempRoot, 'db');
+    const dbPath = join(dbDir, 'index.sqlite');
+    const db = await openDatabase(dbPath);
+    const provider = new TieEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      provider.fingerprint(baseConfig.index.chunking_version)
+    );
+
+    replaceSourceData({
+      db,
+      sourceKey: 'repo',
+      documents: [
+        {
+          document: {
+            sourceKey: 'repo',
+            sourceKind: 'local_git',
+            sourceLocator: '/repo',
+            canonicalLocator: null,
+            path: 'docs/two.md',
+            language: 'md',
+            title: 'two.md',
+            contentHash: 'doc-20',
+            content: 'alpha alpha alpha vec2',
+          },
+          chunks: [
+            {
+              chunkIndex: 0,
+              section: 'two.md',
+              content: 'alpha alpha alpha vec2',
+              tokenEstimate: 10,
+              contentHash: 'chunk-20',
+            },
+          ],
+          embedding: [[0, 10]],
+        },
+        {
+          document: {
+            sourceKey: 'repo',
+            sourceKind: 'local_git',
+            sourceLocator: '/repo',
+            canonicalLocator: null,
+            path: 'docs/one.md',
+            language: 'md',
+            title: 'one.md',
+            contentHash: 'doc-21',
+            content: 'alpha vec1',
+          },
+          chunks: [
+            {
+              chunkIndex: 0,
+              section: 'one.md',
+              content: 'alpha vec1',
+              tokenEstimate: 10,
+              contentHash: 'chunk-21',
+            },
+          ],
+          embedding: [[10, 0]],
+        },
+      ],
+    });
+
+    const firstRun = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'alpha',
+      limit: 2,
+      scope: 'project',
+      databasePath: dbPath,
+    });
+
+    const secondRun = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: 'alpha',
+      limit: 2,
+      scope: 'project',
+      databasePath: dbPath,
+    });
+
+    expect(firstRun.results.map((item) => item.path)).toEqual([
+      'docs/two.md',
+      'docs/one.md',
+    ]);
+    expect(secondRun.results.map((item) => item.path)).toEqual([
+      'docs/two.md',
+      'docs/one.md',
+    ]);
+    expect(firstRun.results[0]?.score).toBeCloseTo(
+      firstRun.results[1]?.score ?? 0,
+      12
+    );
+    expect(firstRun.results[0]?.documentId).toBeLessThan(
+      firstRun.results[1]?.documentId ?? 0
+    );
 
     closeDatabase(db);
   });
