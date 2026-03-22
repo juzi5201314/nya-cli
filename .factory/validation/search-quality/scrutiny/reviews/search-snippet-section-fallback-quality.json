@@ -1,0 +1,28 @@
+{
+  "featureId": "search-snippet-section-fallback-quality",
+  "reviewedAt": "2026-03-22T13:45:41Z",
+  "commitId": "7285fdc",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The feature mostly lands the claimed search improvements, but oversized single-symbol code chunks will duplicate their section labels when tree-sitter splits them again.",
+    "issues": [
+      {
+        "file": "src/core/chunking/chunk-code-tree-sitter.ts",
+        "line": 517,
+        "severity": "blocking",
+        "description": "When `materializeGroups()` recurses into a single large symbol node, it passes `sectionParts` instead of the newly computed `groupSectionParts` into `splitNode()`. `splitNode()` then appends the same symbol again, so large functions/classes can be labeled `file.ts · Foo · Foo` instead of `file.ts · Foo`."
+      },
+      {
+        "file": "tests/learn-search.test.ts",
+        "line": 1054,
+        "severity": "non_blocking",
+        "description": "The fallback-ordering regression test does not actually force the LIKE/metadata fallback path; the fixture still allows normal FTS/vector matches, so it would not catch a regression in the code path this feature claims to fix."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Fail: section labels regress for oversized symbol chunks, and the fallback-ordering test does not isolate the fallback path it is meant to verify."
+}

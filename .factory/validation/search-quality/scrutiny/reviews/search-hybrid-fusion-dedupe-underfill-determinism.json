@@ -1,0 +1,39 @@
+{
+  "featureId": "search-hybrid-fusion-dedupe-underfill-determinism",
+  "reviewedAt": "2026-03-22T13:46:16Z",
+  "commitId": "5d2b13088e663459da8fb07f3240c2b8b71a919f",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The search feature mostly lands the requested fusion observability and dedupe, but it still does not fully guarantee deterministic ranking because retriever tie cases are not explicitly broken before RRF scoring, and the oversampling loop remains capped so some underfill cases can still slip through.",
+    "issues": [
+      {
+        "file": "src/db/database.ts",
+        "line": 1001,
+        "severity": "blocking",
+        "description": "`searchVector()` and `searchFts()` still rely on `ORDER BY distance` / `ORDER BY bm25(chunk_fts)` with no secondary key, so equal-scoring candidates can come back in different orders across runs. Because RRF rank is derived from that order, the final search scores and `search --json` ordering are still not guaranteed deterministic yet."
+      },
+      {
+        "file": "src/core/search/search-index.ts",
+        "line": 279,
+        "severity": "non_blocking",
+        "description": "The oversampling retry loop stops at a fixed `maxCandidateLimit` (16x / 64), so sufficiently deep path-filtered matches can still underfill even when enough results exist. This improves the odds of filling the page, but it does not fully satisfy the 'avoid underfill' claim for larger or skewed corpora."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The `search-worker` skill still says to write tests first, but this feature's handoff records a justified deviation because the worker needed to inspect and scaffold search-core behavior before finalizing the regression cases. That exception may be worth documenting for future search refactors.",
+      "evidence": "`.factory/skills/search-worker/SKILL.md` says 'Write tests first'; handoff.skillFeedback.followedProcedure=false with the stated reason that the existing search pipeline had to be inspected to preserve lexical short-circuit behavior."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The repo does not currently record the retriever-ranking nuance that vector suffix filters happen after the inner LIMIT while FTS filters before LIMIT. That detail is what makes the new oversampling loop necessary and easy to rediscover later.",
+      "evidence": "`src/db/database.ts:996-1008` applies the suffix filter after the vector top-N limit, while `src/db/database.ts:1056-1064` applies the FTS suffix filter before its LIMIT."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Fail: the implementation still leaves nondeterministic retriever tie ordering and only heuristically addresses underfill."
+}
