@@ -1,5 +1,6 @@
 import type { AiSearchResponse } from '../core/search/ai-search';
 import { aiSearchIndex } from '../core/search/ai-search';
+import { redactText } from '../utils/redaction';
 import { closeDatabase, loadOperationRuntime, printOutput } from './shared';
 
 function formatGetCommand(
@@ -58,7 +59,9 @@ export async function runAiSearch(args: {
   try {
     if (runtime.lifecycle.rebuildTriggered && !args.asJson) {
       console.log(
-        `检测到 embedding 配置变化，正在重建索引: ${runtime.lifecycle.reason ?? 'unknown'}`
+        redactText(
+          `检测到 embedding 配置变化，正在重建索引: ${runtime.lifecycle.reason ?? 'unknown'}`
+        )
       );
     }
 

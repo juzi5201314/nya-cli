@@ -2,6 +2,7 @@ import { learnGitSource } from '../core/ingest/learn-git';
 import { learnWebSource } from '../core/ingest/learn-web';
 import { createInkProgressReporter } from '../tui/ink-progress';
 import type { WebFetchMode } from '../types/config';
+import { redactText } from '../utils/redaction';
 import { closeDatabase, loadOperationRuntime, printOutput } from './shared';
 
 export async function runLearnGit(args: {
@@ -23,7 +24,9 @@ export async function runLearnGit(args: {
   try {
     if (runtime.lifecycle.rebuildTriggered && !args.asJson) {
       console.log(
-        `检测到 embedding 配置变化，正在重建索引: ${runtime.lifecycle.reason ?? 'unknown'}`
+        redactText(
+          `检测到 embedding 配置变化，正在重建索引: ${runtime.lifecycle.reason ?? 'unknown'}`
+        )
       );
     }
 
@@ -86,7 +89,9 @@ export async function runLearnWeb(args: {
   try {
     if (runtime.lifecycle.rebuildTriggered && !args.asJson) {
       console.log(
-        `检测到 embedding 配置变化，正在重建索引: ${runtime.lifecycle.reason ?? 'unknown'}`
+        redactText(
+          `检测到 embedding 配置变化，正在重建索引: ${runtime.lifecycle.reason ?? 'unknown'}`
+        )
       );
     }
 

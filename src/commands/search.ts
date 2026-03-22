@@ -1,4 +1,5 @@
 import { searchIndex } from '../core/search/search-index';
+import { redactText } from '../utils/redaction';
 import { closeDatabase, loadOperationRuntime, printOutput } from './shared';
 
 export async function runSearch(args: {
@@ -17,7 +18,9 @@ export async function runSearch(args: {
   try {
     if (runtime.lifecycle.rebuildTriggered && !args.asJson) {
       console.log(
-        `检测到 embedding 配置变化，正在重建索引: ${runtime.lifecycle.reason ?? 'unknown'}`
+        redactText(
+          `检测到 embedding 配置变化，正在重建索引: ${runtime.lifecycle.reason ?? 'unknown'}`
+        )
       );
     }
 

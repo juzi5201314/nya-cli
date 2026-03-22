@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import type { EmbeddingProvider, LlmProvider } from '../../providers/types';
 import type { ScopeMode } from '../../types/config';
+import { redactText } from '../../utils/redaction';
 import { type SearchResult, searchIndex } from './search-index';
 
 type PlannerResult = {
@@ -68,9 +69,9 @@ function formatEvidence(evidence: EvidenceRecord[]): string {
   return evidence
     .map(
       (item) =>
-        `[${item.evidenceId}] path=${item.path} section=${item.section} score=${item.score.toFixed(
+        `[${item.evidenceId}] path=${redactText(item.path)} section=${redactText(item.section)} score=${item.score.toFixed(
           6
-        )}\n${item.snippet}`
+        )}\n${redactText(item.snippet)}`
     )
     .join('\n\n');
 }
@@ -131,10 +132,12 @@ async function planQueries(args: {
   maxQueriesPerStep: number;
 }): Promise<PlannerResult> {
   const prompt = [
-    `User question: ${args.userQuery}`,
+    `User question: ${redactText(args.userQuery)}`,
     '',
     `Previously used queries: ${
-      args.usedQueries.length > 0 ? args.usedQueries.join(' | ') : 'none'
+      args.usedQueries.length > 0
+        ? args.usedQueries.map((query) => redactText(query)).join(' | ')
+        : 'none'
     }`,
     '',
     'Current evidence:',
@@ -175,7 +178,7 @@ async function synthesizeAnswer(args: {
   }
 
   const prompt = [
-    `User question: ${args.userQuery}`,
+    `User question: ${redactText(args.userQuery)}`,
     '',
     'Evidence:',
     formatEvidence(args.evidence),

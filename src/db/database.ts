@@ -5,6 +5,7 @@ import { dirname } from 'node:path';
 import * as sqliteVec from 'sqlite-vec';
 
 import type { EmbeddingFingerprint } from '../providers/types';
+import { normalizeLocatorForStorage, redactText } from '../utils/redaction';
 import { extractSearchTerms } from '../utils/text';
 
 const SCHEMA_VERSION = '4';
@@ -520,10 +521,14 @@ export function upsertSourceManifest(
   db: Database,
   manifest: SourceManifestInput
 ): void {
-  const existing = getSourceManifest(db, manifest.sourceKey);
+  const normalizedSourceKey = normalizeLocatorForStorage(manifest.sourceKey);
+  const existing = getSourceManifest(db, normalizedSourceKey);
   const createdAt = existing?.createdAt ?? nowIso();
   const updatedAt = nowIso();
   const lastIngestedAt = nowIso();
+  const rootLocator = normalizeLocatorForStorage(manifest.rootLocator);
+  const displayLocator = normalizeLocatorForStorage(manifest.displayLocator);
+  const reingestPayloadJson = redactText(manifest.reingestPayloadJson);
 
   db.query(
     `
@@ -553,12 +558,12 @@ export function upsertSourceManifest(
         last_ingested_at = excluded.last_ingested_at
     `
   ).run(
-    manifest.sourceKey,
+    normalizedSourceKey,
     manifest.sourceKind,
     manifest.provider,
-    manifest.rootLocator,
-    manifest.displayLocator,
-    manifest.reingestPayloadJson,
+    rootLocator,
+    displayLocator,
+    reingestPayloadJson,
     createdAt,
     updatedAt,
     lastIngestedAt,
@@ -626,6 +631,7 @@ export function getSourceManifest(
   db: Database,
   sourceKey: string
 ): SourceManifestRow | null {
+  const normalizedSourceKey = normalizeLocatorForStorage(sourceKey);
   const row = db
     .query<
       {
@@ -666,7 +672,7 @@ export function getSourceManifest(
         WHERE source_key = ?1
       `
     )
-    .get(sourceKey);
+    .get(normalizedSourceKey);
 
   if (!row) {
     return null;
@@ -693,6 +699,9 @@ export function updateSourceManifestRebuildState(
     return;
   }
 
+  const normalizedSourceKey = normalizeLocatorForStorage(sourceKey);
+  const normalizedError = state.error ? redactText(state.error) : null;
+
   db.query(
     `
       UPDATE source_manifests
@@ -705,9 +714,9 @@ export function updateSourceManifestRebuildState(
       WHERE source_key = ?1
     `
   ).run(
-    sourceKey,
+    normalizedSourceKey,
     state.status,
-    state.error,
+    normalizedError,
     state.attempts,
     state.rebuildAt,
     state.rebuildSuccessAt
@@ -752,7 +761,8 @@ export function replaceSourceData(args: {
     embedding: number[][];
   }>;
 }): { documentCount: number; chunkCount: number } {
-  const { db, sourceKey, documents } = args;
+  const { db, documents } = args;
+  const sourceKey = normalizeLocatorForStorage(args.sourceKey);
   const insertDocument = db.prepare(
     `
       INSERT INTO documents(
@@ -797,12 +807,22 @@ export function replaceSourceData(args: {
 
     for (const entry of documents) {
       const createdAt = nowIso();
+      const documentSourceKey = normalizeLocatorForStorage(
+        entry.document.sourceKey
+      );
+      const sourceLocator = normalizeLocatorForStorage(
+        entry.document.sourceLocator
+      );
+      const canonicalLocator = entry.document.canonicalLocator
+        ? normalizeLocatorForStorage(entry.document.canonicalLocator)
+        : null;
+      const documentPath = normalizeLocatorForStorage(entry.document.path);
       const documentResult = insertDocument.run(
-        entry.document.sourceKey,
+        documentSourceKey,
         entry.document.sourceKind,
-        entry.document.sourceLocator,
-        entry.document.canonicalLocator,
-        entry.document.path,
+        sourceLocator,
+        canonicalLocator,
+        documentPath,
         entry.document.language,
         entry.document.title,
         entry.document.contentHash,
@@ -822,12 +842,7 @@ export function replaceSourceData(args: {
           createdAt
         );
         const chunkId = Number(chunkResult.lastInsertRowid);
-        insertFts.run(
-          chunkId,
-          chunk.content,
-          entry.document.path,
-          chunk.section
-        );
+        insertFts.run(chunkId, chunk.content, documentPath, chunk.section);
         insertVec.run(chunkId, new Float32Array(entry.embedding[index] ?? []));
         chunkCount += 1;
       }
@@ -1073,7 +1088,7 @@ export function searchMetadataLike(
 
 function normalizeDocumentLookupPath(path: string): string {
   if (/^[a-z]+:\/\//i.test(path)) {
-    return path;
+    return normalizeLocatorForStorage(path);
   }
 
   return path.replaceAll('\\', '/').replace(/^\.\//, '');
@@ -1155,8 +1170,11 @@ export function findDocumentsByPath(
   }
 
   const normalizedPath = normalizeDocumentLookupPath(path);
+  const normalizedSourceKey = sourceKey
+    ? normalizeLocatorForStorage(sourceKey)
+    : undefined;
 
-  const rows = sourceKey
+  const rows = normalizedSourceKey
     ? db
         .query<StoredDocumentQueryRow, [string, string]>(
           `
@@ -1177,7 +1195,7 @@ export function findDocumentsByPath(
             ORDER BY id
           `
         )
-        .all(normalizedPath, sourceKey)
+        .all(normalizedPath, normalizedSourceKey)
     : db
         .query<StoredDocumentQueryRow, [string]>(
           `
@@ -1284,7 +1302,9 @@ export function deleteSourceManifest(db: Database, sourceKey: string): void {
   if (!tableExists(db, 'source_manifests')) {
     return;
   }
-  db.query('DELETE FROM source_manifests WHERE source_key = ?1').run(sourceKey);
+  db.query('DELETE FROM source_manifests WHERE source_key = ?1').run(
+    normalizeLocatorForStorage(sourceKey)
+  );
 }
 
 export function setLastRebuildAt(db: Database): void {

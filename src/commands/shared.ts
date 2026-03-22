@@ -19,6 +19,7 @@ import {
 } from '../providers/web';
 import type { ProgressReporter } from '../tui/types';
 import type { ScopeMode } from '../types/config';
+import { redactDeep, redactText } from '../utils/redaction';
 
 export function resolveDefaultScope(project: boolean): ScopeMode {
   return project ? 'project' : 'global';
@@ -39,16 +40,16 @@ export function requireDbScope(
 
 export function printOutput(value: unknown, asJson: boolean): void {
   if (asJson) {
-    console.log(JSON.stringify(value, null, 2));
+    console.log(JSON.stringify(redactDeep(value), null, 2));
     return;
   }
 
   if (typeof value === 'string') {
-    console.log(value);
+    console.log(redactText(value));
     return;
   }
 
-  console.log(JSON.stringify(value, null, 2));
+  console.log(JSON.stringify(redactDeep(value), null, 2));
 }
 
 export async function loadOperationRuntime(args: {

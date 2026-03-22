@@ -3,6 +3,7 @@ import { basename, extname, isAbsolute, relative, resolve } from 'node:path';
 import type { ScopePaths } from '../../config/paths';
 import type { AppConfig } from '../../types/config';
 import { sha256 } from '../../utils/hash';
+import { normalizeLocatorForStorage } from '../../utils/redaction';
 
 const BINARY_EXTENSIONS = new Set([
   '.png',
@@ -132,14 +133,22 @@ async function ensureRemoteCache(
   url: string,
   paths: ScopePaths
 ): Promise<string> {
-  const normalized = url.trim();
-  const cachePath = resolve(paths.remoteCacheDir, sha256(normalized));
+  const sourceUrl = url.trim();
+  const persistedUrl = normalizeLocatorForStorage(sourceUrl);
+  const cachePath = resolve(paths.remoteCacheDir, sha256(persistedUrl));
 
   try {
     await stat(cachePath);
-    await runGit(['-C', cachePath, 'remote', 'set-url', 'origin', normalized]);
-    await runGit(['-C', cachePath, 'fetch', '--depth=1', 'origin', 'HEAD']);
+    await runGit(['-C', cachePath, 'fetch', '--depth=1', sourceUrl, 'HEAD']);
     await runGit(['-C', cachePath, 'reset', '--hard', 'FETCH_HEAD']);
+    await runGit([
+      '-C',
+      cachePath,
+      'remote',
+      'set-url',
+      'origin',
+      persistedUrl,
+    ]);
     return cachePath;
   } catch (error) {
     if (
@@ -148,7 +157,15 @@ async function ensureRemoteCache(
     ) {
       throw error;
     }
-    await runGit(['clone', '--depth=1', normalized, cachePath]);
+    await runGit(['clone', '--depth=1', sourceUrl, cachePath]);
+    await runGit([
+      '-C',
+      cachePath,
+      'remote',
+      'set-url',
+      'origin',
+      persistedUrl,
+    ]);
     return cachePath;
   }
 }
