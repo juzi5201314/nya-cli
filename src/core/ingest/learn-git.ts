@@ -22,6 +22,7 @@ export type LearnGitResult = {
   databasePath: string;
   documentsIndexed: number;
   chunksIndexed: number;
+  skippedSymlinks: number;
   rebuildTriggered: boolean;
   rebuildReason: string | null;
   fingerprint: EmbeddingFingerprint;
@@ -43,10 +44,11 @@ export async function learnGitSource(args: {
     source: args.source,
     paths: args.scopePaths,
   });
-  const repoFiles = await readRepositoryFiles({
+  const repoScan = await readRepositoryFiles({
     source: resolvedSource,
     config: args.config,
   });
+  const repoFiles = repoScan.files;
 
   const fileTask = args.progress?.task('Index git files', repoFiles.length);
   const preparedDocuments = [];
@@ -125,6 +127,7 @@ export async function learnGitSource(args: {
     databasePath: args.scopePaths.databasePath,
     documentsIndexed: counts.documentCount,
     chunksIndexed: counts.chunkCount,
+    skippedSymlinks: repoScan.skippedSymlinks,
     rebuildTriggered: args.rebuildTriggered,
     rebuildReason: args.rebuildReason,
     fingerprint: args.embeddingProvider.fingerprint(

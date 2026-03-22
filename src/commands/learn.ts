@@ -52,6 +52,7 @@ export async function runLearnGit(args: {
         `database: ${result.databasePath}`,
         `documents_indexed: ${result.documentsIndexed}`,
         `chunks_indexed: ${result.chunksIndexed}`,
+        `skipped_symlinks: ${result.skippedSymlinks}`,
         `rebuild_triggered: ${result.rebuildTriggered}`,
       ].join('\n'),
       false

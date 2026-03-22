@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { learnGitSource } from '../src/core/ingest/learn-git';
 import { searchIndex } from '../src/core/search/search-index';
@@ -603,6 +603,76 @@ describe('learn and search', () => {
     expect(cOnly.results.map((item) => item.path)).toEqual([
       'src/native/main.c',
     ]);
+
+    closeDatabase(db);
+  });
+
+  test('skips tracked symlinks and keeps outside marker text out of search', async () => {
+    const repoDir = join(tempRoot, 'fixture-repo');
+    const dbDir = join(tempRoot, 'fixture-db');
+    const outsideFile = join(tempRoot, 'outside.txt');
+    const escapeMarker = 'ZXQJXQJXQJ_98765';
+    const searchOnlyConfig: AppConfig = {
+      ...baseConfig,
+      index: {
+        ...baseConfig.index,
+        vector: false,
+        fts: false,
+      },
+    };
+
+    await mkdir(repoDir, { recursive: true });
+    await writeFile(
+      outsideFile,
+      `This file lives outside the repo and contains ${escapeMarker}.\n`
+    );
+    await writeFile(
+      join(repoDir, 'README.md'),
+      '# Symlink\n\nThis repository still has normal searchable content.\n'
+    );
+    await symlink(outsideFile, join(repoDir, 'escape.txt'));
+
+    await runGit(repoDir, ['init']);
+    await runGit(repoDir, ['add', '.']);
+
+    const db = await openDatabase(join(dbDir, 'index.sqlite'));
+    const provider = new FakeEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      provider.fingerprint(baseConfig.index.chunking_version)
+    );
+
+    const learnResult = await learnGitSource({
+      source: repoDir,
+      config: searchOnlyConfig,
+      db,
+      scope: 'project',
+      scopePaths: {
+        scope: 'project',
+        projectDirName: '.nya-cli',
+        databasePath: join(dbDir, 'index.sqlite'),
+        databaseDir: dbDir,
+        remoteCacheDir: join(tempRoot, 'cache'),
+      },
+      embeddingProvider: provider,
+      rebuildTriggered: false,
+      rebuildReason: null,
+    });
+
+    db.run('DROP TABLE IF EXISTS chunk_vec');
+
+    const searchResult = await searchIndex({
+      db,
+      embeddingProvider: provider,
+      query: escapeMarker,
+      limit: 5,
+      scope: 'project',
+      databasePath: join(dbDir, 'index.sqlite'),
+    });
+
+    expect(learnResult.documentsIndexed).toBe(1);
+    expect(learnResult.skippedSymlinks).toBe(1);
+    expect(searchResult.results).toHaveLength(0);
 
     closeDatabase(db);
   });

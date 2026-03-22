@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises';
+import { lstat, stat } from 'node:fs/promises';
 import { basename, extname, isAbsolute, relative, resolve } from 'node:path';
 import type { ScopePaths } from '../../config/paths';
 import type { AppConfig } from '../../types/config';
@@ -96,6 +96,11 @@ export type RepoFile = {
   language: string;
   title: string;
   content: string;
+};
+
+export type ReadRepositoryFilesResult = {
+  files: RepoFile[];
+  skippedSymlinks: number;
 };
 
 function isRemoteSource(source: string): boolean {
@@ -261,19 +266,25 @@ export async function resolveGitSource(args: {
 export async function readRepositoryFiles(args: {
   source: ResolvedGitSource;
   config: AppConfig;
-}): Promise<RepoFile[]> {
+}): Promise<ReadRepositoryFilesResult> {
   const raw = await runGit(['-C', args.source.repoRoot, 'ls-files', '-z']);
   const files = raw.split('\0').filter(Boolean);
   const result: RepoFile[] = [];
+  let skippedSymlinks = 0;
 
   for (const relativePath of files) {
+    const absolutePath = resolve(args.source.repoRoot, relativePath);
+    const fileStat = await lstat(absolutePath);
+    if (fileStat.isSymbolicLink()) {
+      skippedSymlinks += 1;
+      continue;
+    }
+
     const ext = extname(relativePath).toLowerCase();
     if (shouldSkipFile(relativePath, ext)) {
       continue;
     }
 
-    const absolutePath = resolve(args.source.repoRoot, relativePath);
-    const fileStat = await stat(absolutePath);
     if (fileStat.size > args.config.index.max_file_bytes) {
       continue;
     }
@@ -298,7 +309,10 @@ export async function readRepositoryFiles(args: {
     });
   }
 
-  return result;
+  return {
+    files: result,
+    skippedSymlinks,
+  };
 }
 
 export function getDisplayedPath(
