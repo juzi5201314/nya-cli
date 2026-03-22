@@ -1,0 +1,15 @@
+{
+  "featureId": "ai-search-structured-output-fallback",
+  "reviewedAt": "2026-03-22T06:11:24Z",
+  "commitId": "46874fe3ed47d572f1dbbff0906a07bc7b1a7018",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fallback helper is wired through ai-search planner/answer calls, and the CLI now surfaces the fallback flag in both JSON and text output. Offline coverage includes the structured-output rejection path, propagation into ai-search results, and a negative case for unrelated API errors.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed the feature implementation and found it satisfies the structured-output fallback contract without blocking issues."
+}

@@ -1,0 +1,34 @@
+{
+  "featureId": "safety-url-redaction-and-at-rest-hygiene",
+  "reviewedAt": "2026-03-22T06:13:43Z",
+  "commitId": "ba60407",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The feature is broadly implemented, but remote git ingest still writes credentialed origin URLs to `.git/config` during the initial clone before sanitizing them, and fragment handling drops the fragment entirely instead of redacting fragment params.",
+    "issues": [
+      {
+        "file": "src/core/ingest/git-source.ts",
+        "line": 160,
+        "severity": "blocking",
+        "description": "`git clone --depth=1 sourceUrl cachePath` persists the credentialed URL into the cached repo before the subsequent `remote set-url origin persistedUrl` rewrite. If the process crashes or the rewrite fails, raw credentials remain on disk, which violates the at-rest hygiene requirement for remote git caches."
+      },
+      {
+        "file": "src/utils/redaction.ts",
+        "line": 86,
+        "severity": "non_blocking",
+        "description": "Fragment handling defaults to stripping the entire fragment (`stripFragment ?? true`) rather than redacting fragment parameter values. That removes `#k=v` structure instead of preserving it with `[REDACTED]`, so the implementation does not fully match the stated fragment-param redaction behavior."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The worker deviated from the `safety-db-worker` procedure by introducing the shared redaction utility before the red tests, but the handoff indicates this was done to make the end-to-end assertions stable across output, persistence, and prompt surfaces.",
+      "evidence": "handoff.skillFeedback.followedProcedure=false; transcript skeleton shows sanitizer wiring before the safety regression tests"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed the diff and transcript skeleton. The feature mostly covers the redaction contract, but the remote git cache still has a transient raw-credential write path, so the review does not pass."
+}

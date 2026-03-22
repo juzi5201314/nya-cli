@@ -1,0 +1,15 @@
+{
+  "featureId": "safety-git-symlink-escape",
+  "reviewedAt": "2026-03-22T06:09:50Z",
+  "commitId": "e0b7063",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The implementation matches the contract: tracked symlinks are skipped before file reads, `skippedSymlinks` is surfaced through learn-git output, and the regression test proves outside-repo marker text is not searchable.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed the feature diff and transcript skeleton; no correctness or safety issues found."
+}

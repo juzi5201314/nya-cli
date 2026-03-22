@@ -1,0 +1,39 @@
+{
+  "featureId": "db-doctor-rebuild-health-and-fingerprint-guards",
+  "reviewedAt": "2026-03-22T14:12:52+08:00",
+  "commitId": "07c58e1",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The snapshot-based doctor path correctly avoids filesystem writes for normal cases, but it still has two correctness gaps: it can under-report unhealthy databases when config is unavailable, and it can crash on an existing DB that lacks the metadata table because read-only inspection no longer bootstraps schema.",
+    "issues": [
+      {
+        "file": "/root/projects/nya2/src/db/database.ts",
+        "line": 1362,
+        "severity": "blocking",
+        "description": "When `args.fingerprint` is null, `getDoctorReport()` skips `inspectIndexState()` and falls back to only checking `failedSourceManifests`. That means an existing DB with missing search tables or a stale fingerprint can be reported as `healthStatus: 'ok'` if the config cannot be loaded, violating the requirement that `db doctor` report an accurate health/rebuild status for any existing DB."
+      },
+      {
+        "file": "/root/projects/nya2/src/db/database.ts",
+        "line": 1309,
+        "severity": "blocking",
+        "description": "`getDbStats()` still unconditionally calls `getStoredFingerprint(db)`, which queries `index_metadata` without a guard. Because `db doctor` now opens a raw read-only snapshot instead of bootstrapping schema, an existing DB file that lacks `index_metadata` (for example, a partially initialized or manually created file) will now throw instead of returning a doctor report."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The worker deviated from the skill's 'tests first' procedure while iterating on SQLite/WAL snapshot behavior. The handoff says this was intentional because the read-only doctor fix needed implementation context before stable regression tests could be written.",
+      "evidence": "handoff.skillFeedback.followedProcedure=false; deviations explain the implementation-first step before tests."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The doctor implementation now depends on a temp snapshot copy of the DB plus `-wal/-shm` sidecars to stay read-only. This pattern is not recorded in `.factory/library/`, so future DB-read-only work may need to rediscover it.",
+      "evidence": "src/commands/shared.ts:172-194 copies the DB and sidecars into a temp dir before opening it readonly."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Review completed for `db-doctor-rebuild-health-and-fingerprint-guards`; the feature is close, but the doctor path still has correctness gaps that can misreport or crash on existing DBs."
+}
