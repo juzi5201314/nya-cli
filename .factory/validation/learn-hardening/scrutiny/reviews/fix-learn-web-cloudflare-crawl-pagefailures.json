@@ -1,0 +1,21 @@
+{
+  "featureId": "fix-learn-web-cloudflare-crawl-pagefailures",
+  "reviewedAt": "2026-03-22T12:23:20Z",
+  "commitId": "f670c6a",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Cloudflare crawl now surfaces structured pageFailures for non-completed records and learn-web carries them through to the final result. The regression test covers mixed completed/skipped/disallowed/cancelled records end-to-end, and I found no blocking issues in the fix.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The learn-worker procedure still appears too rigid for crawl/provider fixes that change shared result shapes first and then need regression coverage. This fix again required implementation-first exploration before the final mixed-status assertions were obvious.",
+      "evidence": "handoff.skillFeedback.followedProcedure=false; the handoff says the worker wired provider/result plumbing before extending the Cloudflare regression, then verified the contract with targeted and full test runs."
+    }
+  ],
+  "addressesFailureFrom": "/root/projects/nya2/.factory/validation/learn-hardening/scrutiny/reviews/learn-web-hardening.json",
+  "summary": "Reviewed the Cloudflare page-failure fix against the prior learn-web-hardening failure and confirmed it resolves the blocking gap for non-completed crawl records."
+}

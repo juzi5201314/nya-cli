@@ -1,0 +1,21 @@
+{
+  "featureId": "fix-learn-git-relearn-all-files-missing-clears-source",
+  "reviewedAt": "2026-03-22T12:21:54Z",
+  "commitId": "a044ac2678d03a7c77b3c37e9fd0aadd4a9ceb84",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix moves the zero-readable-files failure until after replaceSourceData runs, so a relearn with all tracked files missing now clears stale source data before erroring. The regression test also proves deleted paths disappear from DB/search.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The learn-worker skill asks for a manual CLI sanity check, but the worker fell back to tests because the repo does not currently expose an offline top-level `learn git` fixture path. That exception should be reflected in the skill docs or an offline CLI harness should be added.",
+      "evidence": "handoff.skillFeedback.followedProcedure=false; the handoff says the worker validated with regression tests and bun test instead of a live `bun run src/index.ts learn ...` invocation."
+    }
+  ],
+  "addressesFailureFrom": "/root/projects/nya2/.factory/validation/learn-hardening/scrutiny/reviews/learn-git-hardening.json",
+  "summary": "PASS: the fix addresses the original blocker by clearing/replacing git source data before surfacing the no-readable-documents error, and the new regression covers the all-tracked-files-missing relearn case."
+}
