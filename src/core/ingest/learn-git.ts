@@ -10,9 +10,11 @@ import type { AppConfig, ScopeMode } from '../../types/config';
 import { sha256 } from '../../utils/hash';
 import { chunkTextDocument } from '../chunking/chunk-text';
 import {
+  type GitFileFailure,
   getGitSourceProviderId,
   readRepositoryFiles,
   resolveGitSource,
+  type SkippedGitFile,
 } from './git-source';
 
 export type LearnGitResult = {
@@ -23,6 +25,8 @@ export type LearnGitResult = {
   documentsIndexed: number;
   chunksIndexed: number;
   skippedSymlinks: number;
+  skippedFiles: SkippedGitFile[];
+  fileFailures: GitFileFailure[];
   rebuildTriggered: boolean;
   rebuildReason: string | null;
   fingerprint: EmbeddingFingerprint;
@@ -39,63 +43,86 @@ export async function learnGitSource(args: {
   rebuildReason: string | null;
   recordManifest?: boolean;
   progress?: ProgressReporter;
+  gitTimeoutMs?: number;
 }): Promise<LearnGitResult> {
   const resolvedSource = await resolveGitSource({
     source: args.source,
     paths: args.scopePaths,
+    ...(args.gitTimeoutMs !== undefined
+      ? { gitTimeoutMs: args.gitTimeoutMs }
+      : {}),
   });
   const repoScan = await readRepositoryFiles({
     source: resolvedSource,
     config: args.config,
+    ...(args.gitTimeoutMs !== undefined
+      ? { gitTimeoutMs: args.gitTimeoutMs }
+      : {}),
   });
   const repoFiles = repoScan.files;
 
   const fileTask = args.progress?.task('Index git files', repoFiles.length);
   const preparedDocuments = [];
+  const fileFailures = [...repoScan.fileFailures];
   for (const repoFile of repoFiles) {
-    const chunks = await chunkTextDocument({
-      filePath: repoFile.relativePath,
-      content: repoFile.content,
-      config: args.config,
-    });
-    if (chunks.length === 0) {
-      fileTask?.increment(1);
-      continue;
-    }
-
-    const embeddings = await args.embeddingProvider.embedDocuments(
-      chunks.map((chunk) => chunk.content)
-    );
-
-    preparedDocuments.push({
-      document: {
-        sourceKey: resolvedSource.sourceKey,
-        sourceKind: resolvedSource.sourceKind,
-        sourceLocator:
-          resolvedSource.sourceKind === 'remote_git'
-            ? resolvedSource.repoUrl
-            : repoFile.absolutePath,
-        canonicalLocator: null,
-        path: repoFile.relativePath,
-        language: repoFile.language,
-        title: repoFile.title,
-        contentHash: sha256(repoFile.content),
+    try {
+      const chunks = await chunkTextDocument({
+        filePath: repoFile.relativePath,
         content: repoFile.content,
-      },
-      chunks: chunks.map((chunk, index) => ({
-        documentId: 0,
-        chunkIndex: index,
-        section: chunk.section,
-        content: chunk.content,
-        tokenEstimate: chunk.tokenEstimate,
-        contentHash: chunk.contentHash,
-      })),
-      embedding: embeddings,
-    });
+        config: args.config,
+      });
+      if (chunks.length === 0) {
+        fileTask?.increment(1);
+        continue;
+      }
+
+      const embeddings = await args.embeddingProvider.embedDocuments(
+        chunks.map((chunk) => chunk.content)
+      );
+
+      preparedDocuments.push({
+        document: {
+          sourceKey: resolvedSource.sourceKey,
+          sourceKind: resolvedSource.sourceKind,
+          sourceLocator:
+            resolvedSource.sourceKind === 'remote_git'
+              ? resolvedSource.repoUrl
+              : repoFile.absolutePath,
+          canonicalLocator: null,
+          path: repoFile.relativePath,
+          language: repoFile.language,
+          title: repoFile.title,
+          contentHash: sha256(repoFile.content),
+          content: repoFile.content,
+        },
+        chunks: chunks.map((chunk, index) => ({
+          documentId: 0,
+          chunkIndex: index,
+          section: chunk.section,
+          content: chunk.content,
+          tokenEstimate: chunk.tokenEstimate,
+          contentHash: chunk.contentHash,
+        })),
+        embedding: embeddings,
+      });
+    } catch (error) {
+      fileFailures.push({
+        relativePath: repoFile.relativePath,
+        absolutePath: repoFile.absolutePath,
+        stage: 'chunk',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     fileTask?.increment(1);
   }
   fileTask?.stop();
+
+  if (preparedDocuments.length === 0 && fileFailures.length > 0) {
+    throw new Error(
+      `learn git 失败：没有可索引的文档；fileFailures=${fileFailures.length}; skippedFiles=${repoScan.skippedFiles.length}`
+    );
+  }
 
   const counts = replaceSourceData({
     db: args.db,
@@ -128,6 +155,8 @@ export async function learnGitSource(args: {
     documentsIndexed: counts.documentCount,
     chunksIndexed: counts.chunkCount,
     skippedSymlinks: repoScan.skippedSymlinks,
+    skippedFiles: repoScan.skippedFiles,
+    fileFailures,
     rebuildTriggered: args.rebuildTriggered,
     rebuildReason: args.rebuildReason,
     fingerprint: args.embeddingProvider.fingerprint(

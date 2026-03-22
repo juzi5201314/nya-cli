@@ -8,9 +8,7 @@
     "failed": 0,
     "blocked": 0
   },
-  "passedAssertions": [
-    "VAL-DB-021"
-  ],
+  "passedAssertions": ["VAL-DB-021"],
   "failedAssertions": [],
   "blockedAssertions": [],
   "appliedUpdates": [],

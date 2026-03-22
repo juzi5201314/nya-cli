@@ -56,6 +56,8 @@ export async function runLearnGit(args: {
         `documents_indexed: ${result.documentsIndexed}`,
         `chunks_indexed: ${result.chunksIndexed}`,
         `skipped_symlinks: ${result.skippedSymlinks}`,
+        `skipped_files: ${result.skippedFiles.length}`,
+        `file_failures: ${result.fileFailures.length}`,
         `rebuild_triggered: ${result.rebuildTriggered}`,
       ].join('\n'),
       false

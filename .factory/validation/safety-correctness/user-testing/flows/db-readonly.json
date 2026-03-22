@@ -6,10 +6,7 @@
     "repoDir": "/tmp/nya-cli-db-readonly-lddhbmul/repo",
     "databasePath": "/tmp/nya-cli-db-readonly-lddhbmul/repo/.nya-cli/index.sqlite"
   },
-  "toolsUsed": [
-    "bun run src/index.ts",
-    "python3"
-  ],
+  "toolsUsed": ["bun run src/index.ts", "python3"],
   "assertions": [
     {
       "id": "VAL-DB-021",

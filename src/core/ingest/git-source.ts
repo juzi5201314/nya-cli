@@ -5,6 +5,8 @@ import type { AppConfig } from '../../types/config';
 import { sha256 } from '../../utils/hash';
 import { normalizeLocatorForNetwork } from '../../utils/redaction';
 
+const DEFAULT_GIT_PROCESS_TIMEOUT_MS = 30_000;
+
 const BINARY_EXTENSIONS = new Set([
   '.png',
   '.jpg',
@@ -99,8 +101,23 @@ export type RepoFile = {
   content: string;
 };
 
+export type SkippedGitFile = {
+  relativePath: string;
+  absolutePath: string;
+  reason: 'symlink' | 'ignored' | 'too_large' | 'binary' | 'empty';
+};
+
+export type GitFileFailure = {
+  relativePath: string;
+  absolutePath: string;
+  stage: 'stat' | 'read' | 'chunk';
+  error: string;
+};
+
 export type ReadRepositoryFilesResult = {
   files: RepoFile[];
+  skippedFiles: SkippedGitFile[];
+  fileFailures: GitFileFailure[];
   skippedSymlinks: number;
 };
 
@@ -108,30 +125,106 @@ function isRemoteSource(source: string): boolean {
   return /^(https?:\/\/|ssh:\/\/|git@|file:\/\/|git:\/\/)/.test(source);
 }
 
-async function runGit(args: string[], cwd?: string): Promise<string> {
+class GitProcessTimeoutError extends Error {
+  readonly code = 'GIT_PROCESS_TIMEOUT';
+
+  constructor(
+    readonly args: string[],
+    readonly cwd: string | undefined,
+    readonly timeoutMs: number
+  ) {
+    super(
+      `git ${args.join(' ')} timed out after ${timeoutMs}ms${cwd ? ` (cwd: ${cwd})` : ''}`
+    );
+    this.name = 'GitProcessTimeoutError';
+  }
+}
+
+class GitProcessExitError extends Error {
+  readonly code = 'GIT_PROCESS_EXIT';
+
+  constructor(
+    readonly args: string[],
+    readonly cwd: string | undefined,
+    readonly exitCode: number,
+    stderr: string,
+    stdout: string
+  ) {
+    super(
+      `git ${args.join(' ')} 失败 (${exitCode})${cwd ? ` (cwd: ${cwd})` : ''}: ${stderr.trim() || stdout.trim()}`
+    );
+    this.name = 'GitProcessExitError';
+  }
+}
+
+async function runGit(
+  args: string[],
+  cwd?: string,
+  timeoutMs = DEFAULT_GIT_PROCESS_TIMEOUT_MS
+): Promise<string> {
   const proc = Bun.spawn(['git', ...args], {
     ...(cwd ? { cwd } : {}),
     stdout: 'pipe',
     stderr: 'pipe',
   });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
 
-  if (exitCode !== 0) {
-    throw new Error(
-      `git ${args.join(' ')} 失败 (${exitCode}): ${stderr.trim() || stdout.trim()}`
-    );
+  let timedOut = false;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const exited = proc.exited;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      try {
+        proc.kill();
+      } catch {
+        // 进程可能已经退出，忽略即可。
+      }
+      reject(new GitProcessTimeoutError(args, cwd, timeoutMs));
+    }, timeoutMs);
+  });
+
+  try {
+    await Promise.race([exited.then(() => undefined), timeoutPromise]);
+
+    if (timedOut) {
+      try {
+        await exited;
+      } catch {
+        // 超时后进程退出状态不重要，确保回收即可。
+      }
+      throw new GitProcessTimeoutError(args, cwd, timeoutMs);
+    }
+
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    const exitCode = await exited;
+
+    if (exitCode !== 0) {
+      throw new GitProcessExitError(args, cwd, exitCode, stderr, stdout);
+    }
+
+    return stdout.trim();
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+
+    if (timedOut) {
+      try {
+        await exited;
+      } catch {
+        // 超时后进程退出状态不重要，确保回收即可。
+      }
+    }
   }
-
-  return stdout.trim();
 }
 
 async function ensureRemoteCache(
   url: string,
-  paths: ScopePaths
+  paths: ScopePaths,
+  gitTimeoutMs = DEFAULT_GIT_PROCESS_TIMEOUT_MS
 ): Promise<string> {
   const sourceUrl = url.trim();
   const networkSafeUrl = normalizeLocatorForNetwork(sourceUrl);
@@ -139,23 +232,21 @@ async function ensureRemoteCache(
 
   try {
     await stat(cachePath);
-    await runGit([
-      '-C',
+    await runGit(
+      ['-C', cachePath, 'fetch', '--depth=1', networkSafeUrl, 'HEAD'],
       cachePath,
-      'fetch',
-      '--depth=1',
-      networkSafeUrl,
-      'HEAD',
-    ]);
-    await runGit(['-C', cachePath, 'reset', '--hard', 'FETCH_HEAD']);
-    await runGit([
-      '-C',
+      gitTimeoutMs
+    );
+    await runGit(
+      ['-C', cachePath, 'reset', '--hard', 'FETCH_HEAD'],
       cachePath,
-      'remote',
-      'set-url',
-      'origin',
-      networkSafeUrl,
-    ]);
+      gitTimeoutMs
+    );
+    await runGit(
+      ['-C', cachePath, 'remote', 'set-url', 'origin', networkSafeUrl],
+      cachePath,
+      gitTimeoutMs
+    );
     return cachePath;
   } catch (error) {
     if (
@@ -164,15 +255,16 @@ async function ensureRemoteCache(
     ) {
       throw error;
     }
-    await runGit(['clone', '--depth=1', networkSafeUrl, cachePath]);
-    await runGit([
-      '-C',
+    await runGit(
+      ['clone', '--depth=1', networkSafeUrl, cachePath],
+      undefined,
+      gitTimeoutMs
+    );
+    await runGit(
+      ['-C', cachePath, 'remote', 'set-url', 'origin', networkSafeUrl],
       cachePath,
-      'remote',
-      'set-url',
-      'origin',
-      networkSafeUrl,
-    ]);
+      gitTimeoutMs
+    );
     return cachePath;
   }
 }
@@ -254,10 +346,17 @@ function isBinaryContent(bytes: Uint8Array): boolean {
 export async function resolveGitSource(args: {
   source: string;
   paths: ScopePaths;
+  gitTimeoutMs?: number;
 }): Promise<ResolvedGitSource> {
+  const gitTimeoutMs = args.gitTimeoutMs ?? DEFAULT_GIT_PROCESS_TIMEOUT_MS;
+
   if (isRemoteSource(args.source)) {
     const redactedSource = normalizeLocatorForNetwork(args.source);
-    const repoRoot = await ensureRemoteCache(args.source, args.paths);
+    const repoRoot = await ensureRemoteCache(
+      args.source,
+      args.paths,
+      gitTimeoutMs
+    );
     return {
       sourceKind: 'remote_git',
       sourceKey: redactedSource,
@@ -271,12 +370,11 @@ export async function resolveGitSource(args: {
   const absolutePath = isAbsolute(args.source)
     ? args.source
     : resolve(process.cwd(), args.source);
-  const repoRoot = await runGit([
-    '-C',
+  const repoRoot = await runGit(
+    ['-C', absolutePath, 'rev-parse', '--show-toplevel'],
     absolutePath,
-    'rev-parse',
-    '--show-toplevel',
-  ]);
+    gitTimeoutMs
+  );
 
   return {
     sourceKind: 'local_git',
@@ -291,51 +389,98 @@ export async function resolveGitSource(args: {
 export async function readRepositoryFiles(args: {
   source: ResolvedGitSource;
   config: AppConfig;
+  gitTimeoutMs?: number;
 }): Promise<ReadRepositoryFilesResult> {
-  const raw = await runGit(['-C', args.source.repoRoot, 'ls-files', '-z']);
+  const gitTimeoutMs = args.gitTimeoutMs ?? DEFAULT_GIT_PROCESS_TIMEOUT_MS;
+  const raw = await runGit(
+    ['-C', args.source.repoRoot, 'ls-files', '-z'],
+    args.source.repoRoot,
+    gitTimeoutMs
+  );
   const files = raw.split('\0').filter(Boolean);
   const result: RepoFile[] = [];
+  const skippedFiles: SkippedGitFile[] = [];
+  const fileFailures: GitFileFailure[] = [];
   let skippedSymlinks = 0;
 
   for (const relativePath of files) {
     const absolutePath = resolve(args.source.repoRoot, relativePath);
-    const fileStat = await lstat(absolutePath);
-    if (fileStat.isSymbolicLink()) {
-      skippedSymlinks += 1;
-      continue;
-    }
+    let stage: 'stat' | 'read' = 'stat';
 
-    const ext = extname(relativePath).toLowerCase();
-    if (shouldSkipFile(relativePath, ext)) {
-      continue;
-    }
+    try {
+      const fileStat = await lstat(absolutePath);
+      if (fileStat.isSymbolicLink()) {
+        skippedSymlinks += 1;
+        skippedFiles.push({
+          relativePath,
+          absolutePath,
+          reason: 'symlink',
+        });
+        continue;
+      }
 
-    if (fileStat.size > args.config.index.max_file_bytes) {
-      continue;
-    }
+      const ext = extname(relativePath).toLowerCase();
+      if (shouldSkipFile(relativePath, ext)) {
+        skippedFiles.push({
+          relativePath,
+          absolutePath,
+          reason: 'ignored',
+        });
+        continue;
+      }
 
-    const file = Bun.file(absolutePath);
-    const bytes = await file.bytes();
-    if (isBinaryContent(bytes)) {
-      continue;
-    }
+      if (fileStat.size > args.config.index.max_file_bytes) {
+        skippedFiles.push({
+          relativePath,
+          absolutePath,
+          reason: 'too_large',
+        });
+        continue;
+      }
 
-    const content = await file.text();
-    if (!content.trim()) {
-      continue;
-    }
+      stage = 'read';
+      const file = Bun.file(absolutePath);
+      const bytes = await file.bytes();
+      if (isBinaryContent(bytes)) {
+        skippedFiles.push({
+          relativePath,
+          absolutePath,
+          reason: 'binary',
+        });
+        continue;
+      }
 
-    result.push({
-      relativePath,
-      absolutePath,
-      language: detectLanguage(relativePath),
-      title: basename(relativePath),
-      content,
-    });
+      const content = await file.text();
+      if (!content.trim()) {
+        skippedFiles.push({
+          relativePath,
+          absolutePath,
+          reason: 'empty',
+        });
+        continue;
+      }
+
+      result.push({
+        relativePath,
+        absolutePath,
+        language: detectLanguage(relativePath),
+        title: basename(relativePath),
+        content,
+      });
+    } catch (error) {
+      fileFailures.push({
+        relativePath,
+        absolutePath,
+        stage,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   return {
     files: result,
+    skippedFiles,
+    fileFailures,
     skippedSymlinks,
   };
 }
