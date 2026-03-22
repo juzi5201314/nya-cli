@@ -78,6 +78,7 @@ export type WebIngestProvider = {
     url: string,
     options: {
       fetchMode: WebFetchMode;
+      runTempDir?: string;
     }
   ): Promise<WebFetchedPage>;
   crawl?(

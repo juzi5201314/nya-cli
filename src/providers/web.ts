@@ -92,6 +92,23 @@ class TavilyWebSearchProvider implements WebSearchProvider {
 
 type Crawl4AIMode = Exclude<WebFetchMode, 'auto'>;
 
+const CRWL_PROCESS_GRACE_MS = 1_000;
+
+class Crawl4AIProcessTimeoutError extends Error {
+  readonly code = 'CRWL_PROCESS_TIMEOUT';
+
+  constructor(
+    readonly command: string[],
+    readonly timeoutMs: number,
+    readonly cwd: string | undefined
+  ) {
+    super(
+      `crwl ${command.join(' ')} timed out after ${timeoutMs}ms${cwd ? ` (cwd: ${cwd})` : ''}`
+    );
+    this.name = 'Crawl4AIProcessTimeoutError';
+  }
+}
+
 function toAbsoluteUrl(value: string, baseUrl: string): string | null {
   try {
     const url = new URL(value, baseUrl);
@@ -437,138 +454,10 @@ class Crawl4AIWebIngestProvider implements WebIngestProvider {
     return 'headless=true,java_script_enabled=true,text_mode=true,light_mode=false';
   }
 
-  private buildCrawlerRunConfig(args: {
-    rootUrl: string;
-    mode: Crawl4AIMode;
-    deep?: {
-      maxPages: number;
-      maxDepth: number;
-    };
-  }): Record<string, unknown> {
-    const crawl4aiConfig = this.config.web.ingest.providers.crawl4ai;
-
-    const params: Record<string, unknown> = {
-      cache_mode: 'bypass',
-      // 让输出更稳定、更干净，避免 JSON 被 verbose 混入
-      verbose: false,
-      // 降噪：移除遮罩层/同意弹窗等
-      remove_overlay_elements: true,
-      remove_consent_popups: true,
-      // 不强制 robots.txt，保持与现有实现一致（默认不检查）
-      check_robots_txt: false,
-      // 避免把外链当作正文的一部分
-      exclude_external_links: true,
-      exclude_social_media_links: true,
-      excluded_tags: ['script', 'style', 'noscript', 'nav', 'footer', 'aside'],
-      wait_until: args.mode === 'fetch' ? 'networkidle' : 'domcontentloaded',
-      page_timeout:
-        args.mode === 'fetch'
-          ? crawl4aiConfig.fetch_page_timeout_ms
-          : crawl4aiConfig.get_page_timeout_ms,
-      // 默认尽量不要过滤正文块（避免误删文档短段落）
-      word_count_threshold: 0,
-    };
-
-    if (args.deep) {
-      const scope = computePathPrefix(normalizeUrl(args.rootUrl));
-      const includePattern =
-        scope.pathPrefix === '/'
-          ? `${scope.origin}/*`
-          : `${scope.origin}${scope.pathPrefix}*`;
-
-      const excludePatterns = [
-        // common noise routes
-        '*/robots.txt',
-        '*/sitemap.xml',
-        '*/assets/*',
-        '*/static/*',
-        '*/img/*',
-        '*/images/*',
-        '*/_next/*',
-        '*/favicon*',
-        // common non-HTML assets
-        '*.png',
-        '*.jpg',
-        '*.jpeg',
-        '*.gif',
-        '*.svg',
-        '*.webp',
-        '*.ico',
-        '*.css',
-        '*.js',
-        '*.mjs',
-        '*.cjs',
-        '*.map',
-        '*.json',
-        '*.xml',
-        '*.pdf',
-        '*.zip',
-        '*.gz',
-        '*.tgz',
-        '*.tar',
-        '*.rar',
-        '*.7z',
-        '*.woff',
-        '*.woff2',
-        '*.ttf',
-        '*.otf',
-        '*.eot',
-        '*.mp4',
-        '*.webm',
-        '*.mp3',
-        '*.wav',
-        '*.mov',
-        '*.avi',
-        '*.mkv',
-      ];
-
-      params.deep_crawl_strategy = {
-        type: 'BFSDeepCrawlStrategy',
-        params: {
-          max_depth: args.deep.maxDepth,
-          include_external: false,
-          max_pages: args.deep.maxPages,
-          filter_chain: {
-            type: 'FilterChain',
-            params: {
-              filters: [
-                {
-                  type: 'URLPatternFilter',
-                  params: {
-                    patterns: [includePattern],
-                    use_glob: true,
-                  },
-                },
-                {
-                  type: 'URLPatternFilter',
-                  params: {
-                    patterns: excludePatterns,
-                    use_glob: true,
-                    reverse: true,
-                  },
-                },
-                {
-                  type: 'ContentTypeFilter',
-                  params: {
-                    allowed_types: ['text/html'],
-                  },
-                },
-              ],
-            },
-          },
-        },
-      };
-    }
-
-    return {
-      type: 'CrawlerRunConfig',
-      params,
-    };
-  }
-
   private async runCrwl(args: {
     url: string;
     mode: Crawl4AIMode;
+    runTempDir?: string;
     deep?: {
       maxPages: number;
       maxDepth: number;
@@ -577,72 +466,135 @@ class Crawl4AIWebIngestProvider implements WebIngestProvider {
     const crawl4aiConfig = this.config.web.ingest.providers.crawl4ai;
     const command = crawl4aiConfig.command;
 
-    const tempDir = await mkdtemp(join(tmpdir(), 'nya-cli-crawl4ai-'));
-    const crawlerConfigPath = join(tempDir, 'crawler.json');
-    await writeFile(
-      crawlerConfigPath,
-      JSON.stringify(
-        this.buildCrawlerRunConfig({
-          rootUrl: args.url,
-          mode: args.mode,
-          ...(args.deep ? { deep: args.deep } : {}),
-        }),
-        null,
-        2
-      ),
-      'utf8'
-    );
-
-    const spawnOnce = async (cmd: string[]) => {
-      const proc = Bun.spawn(cmd, {
-        stdout: 'pipe',
-        stderr: 'pipe',
-        env: process.env,
-      });
-      const [stdout, stderr, exitCode] = await Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
-
-      return {
-        stdout,
-        stderr,
-        exitCode,
-      };
-    };
-
-    const cmd: string[] = [
-      command,
-      'crawl',
-      args.url,
-      '-o',
-      'all',
-      '-C',
-      crawlerConfigPath,
-      '-b',
-      this.buildBrowserArgs(args.mode),
-    ];
-
-    if (args.deep) {
-      cmd.push('--deep-crawl', 'bfs');
-      cmd.push('--max-pages', String(args.deep.maxPages));
-    }
-
-    const result = await spawnOnce(cmd);
-
-    await rm(tempDir, { recursive: true, force: true });
-
-    if (result.exitCode !== 0) {
-      throw new Error(
-        `crwl crawl 失败 (${result.exitCode}): ${
-          result.stderr.trim() || result.stdout.trim()
-        }`
+    const tempDir = args.runTempDir
+      ? await mkdtemp(join(args.runTempDir, 'page-'))
+      : await mkdtemp(join(tmpdir(), 'nya-cli-crawl4ai-'));
+    try {
+      const crawlerConfigPath = join(tempDir, 'crawler.json');
+      await writeFile(
+        crawlerConfigPath,
+        JSON.stringify(
+          {
+            type: 'CrawlerRunConfig',
+            params: {
+              cache_mode: 'bypass',
+              verbose: false,
+              remove_overlay_elements: true,
+              remove_consent_popups: true,
+              check_robots_txt: false,
+              exclude_external_links: true,
+              exclude_social_media_links: true,
+              excluded_tags: [
+                'script',
+                'style',
+                'noscript',
+                'nav',
+                'footer',
+                'aside',
+              ],
+              wait_until:
+                args.mode === 'fetch' ? 'networkidle' : 'domcontentloaded',
+              page_timeout:
+                args.mode === 'fetch'
+                  ? crawl4aiConfig.fetch_page_timeout_ms
+                  : crawl4aiConfig.get_page_timeout_ms,
+              word_count_threshold: 0,
+            },
+          },
+          null,
+          2
+        ),
+        'utf8'
       );
-    }
+      const spawnOnce = async (cmd: string[], timeoutMs: number) => {
+        const proc = Bun.spawn(cmd, {
+          stdout: 'pipe',
+          stderr: 'pipe',
+          env: process.env,
+        });
 
-    const json = parseJsonFromCrwlOutput(result.stdout);
-    return asCrwlResultArray(json);
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+        let timedOut = false;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            timedOut = true;
+            try {
+              proc.kill();
+            } catch {
+              // 进程可能已经退出，忽略即可。
+            }
+            reject(
+              new Crawl4AIProcessTimeoutError(cmd.slice(1), timeoutMs, tempDir)
+            );
+          }, timeoutMs);
+        });
+
+        try {
+          const exitCode = await Promise.race([proc.exited, timeoutPromise]);
+
+          const [stdout, stderr] = await Promise.all([
+            new Response(proc.stdout).text(),
+            new Response(proc.stderr).text(),
+          ]);
+
+          return {
+            stdout,
+            stderr,
+            exitCode: Number(exitCode),
+          };
+        } catch (error) {
+          if (timedOut) {
+            try {
+              await proc.exited;
+            } catch {
+              // 超时后进程退出状态不重要，确保回收即可。
+            }
+          }
+          throw error;
+        } finally {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+        }
+      };
+
+      const cmd: string[] = [
+        command,
+        'crawl',
+        args.url,
+        '-o',
+        'all',
+        '-C',
+        crawlerConfigPath,
+        '-b',
+        this.buildBrowserArgs(args.mode),
+      ];
+
+      if (args.deep) {
+        cmd.push('--deep-crawl', 'bfs');
+        cmd.push('--max-pages', String(args.deep.maxPages));
+      }
+
+      const pageTimeoutMs =
+        (args.mode === 'fetch'
+          ? crawl4aiConfig.fetch_page_timeout_ms
+          : crawl4aiConfig.get_page_timeout_ms) + CRWL_PROCESS_GRACE_MS;
+
+      const result = await spawnOnce(cmd, pageTimeoutMs);
+
+      if (result.exitCode !== 0) {
+        throw new Error(
+          `crwl crawl 失败 (${result.exitCode}): ${
+            result.stderr.trim() || result.stdout.trim()
+          }`
+        );
+      }
+
+      const json = parseJsonFromCrwlOutput(result.stdout);
+      return asCrwlResultArray(json);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   }
 
   private toWebFetchedPage(args: {
@@ -673,13 +625,18 @@ class Crawl4AIWebIngestProvider implements WebIngestProvider {
     url: string,
     options: {
       fetchMode: WebFetchMode;
+      runTempDir?: string;
     }
   ): Promise<WebFetchedPage> {
     await this.assertAvailable();
 
     const crawl4aiConfig = this.config.web.ingest.providers.crawl4ai;
     const tryMode = async (mode: Crawl4AIMode, minMarkdownChars: number) => {
-      const results = await this.runCrwl({ url, mode });
+      const results = await this.runCrwl({
+        url,
+        mode,
+        ...(options.runTempDir ? { runTempDir: options.runTempDir } : {}),
+      });
       const first = results[0];
       if (!first) {
         throw new Error('crwl 未返回任何结果');
@@ -1293,6 +1250,7 @@ class CloudflareWebIngestProvider implements WebIngestProvider {
     url: string,
     options: {
       fetchMode: WebFetchMode;
+      runTempDir?: string;
     }
   ): Promise<WebFetchedPage> {
     await this.assertAvailable();

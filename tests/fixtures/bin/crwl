@@ -28,6 +28,32 @@ if [[ -z "${url}" ]]; then
   exit 2
 fi
 
+attempt_state_file="${CRWL_STATE_FILE:-}"
+attempt_count=1
+if [[ -n "${attempt_state_file}" ]]; then
+  mkdir -p "$(dirname "${attempt_state_file}")"
+  if [[ -f "${attempt_state_file}" ]]; then
+    attempt_count="$(cat "${attempt_state_file}")"
+    attempt_count=$((attempt_count + 1))
+  fi
+  printf '%s' "${attempt_count}" > "${attempt_state_file}"
+fi
+
+sleep_seconds="${CRWL_SLEEP_SECONDS:-0}"
+sleep_match="${CRWL_SLEEP_MATCH:-}"
+if [[ -n "${sleep_match}" && "${url}" == *"${sleep_match}"* ]]; then
+  sleep "${sleep_seconds}"
+fi
+
+fail_until="${CRWL_FAIL_UNTIL_ATTEMPT:-0}"
+fail_match="${CRWL_FAIL_MATCH:-}"
+if [[ -n "${fail_match}" && "${url}" == *"${fail_match}"* ]]; then
+  if [[ "${attempt_count}" -le "${fail_until}" ]]; then
+    echo "simulated transient failure on attempt ${attempt_count}" 1>&2
+    exit 1
+  fi
+fi
+
 deep="0"
 for arg in "$@"; do
   if [[ "${arg}" == "--deep-crawl" ]]; then
@@ -41,7 +67,8 @@ if [[ "${base}" != */ ]]; then
 fi
 
 root_url="${url%%#*}"
-child_url="${base}guide"
+child_suffix="${CRWL_CHILD_PATH:-guide}"
+child_url="${base}${child_suffix}"
 
 root_md="# Docs\n\nThis is a deterministic fake Crawl4AI markdown output for tests. Tavily and Gemini help agents crawl docs.\n"
 child_md="# Guide\n\nSecond page content for deep crawl tests. It also mentions agents and crawl.\n"
