@@ -1,0 +1,147 @@
+{
+  "groupId": "git",
+  "testedAt": "2026-03-22T20:40:00Z",
+  "isolation": {
+    "workspaceRoot": "/tmp/nya-cli-user-testing-learn-hardening/git",
+    "missionDir": "/root/.factory/missions/6586b515-2320-4b22-9fa5-669b0710e675"
+  },
+  "toolsUsed": ["bun run src/index.ts", "bun run smoke:google"],
+  "assertions": [
+    {
+      "id": "VAL-LEARN-GIT-001",
+      "title": "learn git is idempotent (no duplicate rows)",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Learn the same repo twice with --project --json --no-tui",
+          "expected": "Second learn should replace source data without growing document/chunk counts",
+          "observed": "Both runs indexed 1 document / 1 chunk; db scope stayed at documents=1 and chunks=1"
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "learn-hardening/git/VAL-LEARN-GIT-001c-run1.stdout.txt",
+          "learn-hardening/git/VAL-LEARN-GIT-001c-run2.stdout.txt",
+          "learn-hardening/git/VAL-LEARN-GIT-001c-db-scope.stdout.txt"
+        ],
+        "stderr": [
+          "learn-hardening/git/VAL-LEARN-GIT-001c-run1.stderr.txt",
+          "learn-hardening/git/VAL-LEARN-GIT-001c-run2.stderr.txt",
+          "learn-hardening/git/VAL-LEARN-GIT-001c-db-scope.stderr.txt"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-LEARN-GIT-002",
+      "title": "learn git tolerates single-file read failure",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Learn a repo with one readable tracked file and one missing tracked file",
+          "expected": "Command exits 0 when at least one document is indexed and reports structured file failures",
+          "observed": "Exit code 0, documentsIndexed=1, and fileFailures[0] reported stat/ENOENT for missing.md"
+        },
+        {
+          "action": "Search the readable marker",
+          "expected": "Readable tracked file remains searchable",
+          "observed": "Search returned readable.md"
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "learn-hardening/git/VAL-LEARN-GIT-002-run.stdout.txt",
+          "learn-hardening/git/VAL-LEARN-GIT-002-search-readable.stdout.txt"
+        ],
+        "stderr": [
+          "learn-hardening/git/VAL-LEARN-GIT-002-run.stderr.txt",
+          "learn-hardening/git/VAL-LEARN-GIT-002-search-readable.stderr.txt"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-LEARN-GIT-003",
+      "title": "learn git external git processes have timeouts",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inject a PATH-first fake git that execs sleep and run learn git",
+          "expected": "CLI terminates the hanging git subprocess after the configured wall-clock timeout",
+          "observed": "Process exited in ~30.3s with GitProcessTimeoutError / code GIT_PROCESS_TIMEOUT"
+        },
+        {
+          "action": "Check the fake git PID after the CLI returns",
+          "expected": "No orphan git/sleep process remains",
+          "observed": "Recorded fake git PID was no longer alive"
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "learn-hardening/git/VAL-LEARN-GIT-003-run.stdout.txt"
+        ],
+        "stderr": [
+          "learn-hardening/git/VAL-LEARN-GIT-003-run.stderr.txt"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-LEARN-GIT-004",
+      "title": "re-learn removes deleted files",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Learn a repo containing a deletable marker file, then delete and commit it",
+          "expected": "Second learn should remove the deleted file from retrievable content",
+          "observed": "Second learn dropped documentsIndexed from 2 to 1"
+        },
+        {
+          "action": "Search the deleted marker and run get deleted.md",
+          "expected": "Search returns 0 hits and get fails because the file is gone",
+          "observed": "get deleted.md failed as expected, but search gone999marker still returned keep.md"
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "learn-hardening/git/VAL-LEARN-GIT-004c-run1.stdout.txt",
+          "learn-hardening/git/VAL-LEARN-GIT-004c-run2.stdout.txt",
+          "learn-hardening/git/VAL-LEARN-GIT-004c-search-deleted.stdout.txt"
+        ],
+        "stderr": [
+          "learn-hardening/git/VAL-LEARN-GIT-004c-search-deleted.stderr.txt",
+          "learn-hardening/git/VAL-LEARN-GIT-004c-get-deleted.stderr.txt"
+        ]
+      },
+      "issues": "Search still returned the surviving tracked file for the deleted marker query instead of zero hits."
+    },
+    {
+      "id": "VAL-LEARN-GIT-005",
+      "title": "learn git indexes tracked files only",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Learn a repo with one tracked marker file and one untracked marker file",
+          "expected": "Tracked marker is searchable and untracked marker is not indexed",
+          "observed": "Tracked marker was searchable, but querying the untracked marker still returned the tracked file"
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "learn-hardening/git/VAL-LEARN-GIT-001c-run1.stdout.txt",
+          "learn-hardening/git/VAL-LEARN-GIT-001c-run2.stdout.txt",
+          "learn-hardening/git/VAL-LEARN-GIT-005c-search-tracked.stdout.txt",
+          "learn-hardening/git/VAL-LEARN-GIT-005c-search-untracked.stdout.txt"
+        ],
+        "stderr": [
+          "learn-hardening/git/VAL-LEARN-GIT-005c-search-tracked.stderr.txt",
+          "learn-hardening/git/VAL-LEARN-GIT-005c-search-untracked.stderr.txt"
+        ]
+      },
+      "issues": "The untracked-marker search returned the tracked document instead of zero hits."
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 5 assertions: 3 passed (001, 002, 003) and 2 failed (004, 005). Also ran `bun run smoke:google`, which passed."
+}

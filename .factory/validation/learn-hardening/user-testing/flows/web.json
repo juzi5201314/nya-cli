@@ -1,0 +1,191 @@
+{
+  "groupId": "web",
+  "testedAt": "2026-03-22T12:52:21Z",
+  "isolation": {
+    "workspaceRoot": "/tmp/nya-cli-user-testing-learn-hardening/web",
+    "missionDir": "/root/.factory/missions/6586b515-2320-4b22-9fa5-669b0710e675",
+    "configPath": "/tmp/nya-cli-user-testing-learn-hardening/web/nya.toml",
+    "serverUrl": "http://127.0.0.1:19123",
+    "fakeCrwlPath": "/root/projects/nya2/tests/fixtures/bin/crwl"
+  },
+  "toolsUsed": ["bun run src/index.ts", "bun -e", "bun run smoke:google"],
+  "assertions": [
+    {
+      "id": "VAL-LEARN-WEB-001",
+      "title": "crawl tolerates per-page failures",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run learn web --crawl against the local fixture root URL with two injected child failures",
+          "expected": "The crawl continues, indexes the root page, and records structured failures for both bad pages",
+          "observed": "Exit code 0; documentsIndexed=1; failedPages=2; pageFailures contained two fetch_error entries with attempts=3"
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "learn-hardening/web/VAL-LEARN-WEB-001-run.log"
+        ],
+        "stderr": [
+          "learn-hardening/web/VAL-LEARN-WEB-001-run.log"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-LEARN-WEB-002",
+      "title": "single-page learn is atomic on failure",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run single-page learn against an always-failing URL",
+          "expected": "The command exits non-zero and does not persist partial documents/chunks/vectors",
+          "observed": "Exit code 1 with learn web failure text; db scope reported documents=0, chunks=0, manifests=0"
+        },
+        {
+          "action": "Inspect the isolated SQLite database directly",
+          "expected": "No persisted rows remain for documents, chunks, chunk_vec, or source_manifests",
+          "observed": "All queried counts were 0"
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "learn-hardening/web/VAL-LEARN-WEB-002-run.log",
+          "learn-hardening/web/VAL-LEARN-WEB-002-db-scope.log",
+          "learn-hardening/web/VAL-LEARN-WEB-002-sqlite-check.log"
+        ],
+        "stderr": [
+          "learn-hardening/web/VAL-LEARN-WEB-002-run.log",
+          "learn-hardening/web/VAL-LEARN-WEB-002-db-scope.log",
+          "learn-hardening/web/VAL-LEARN-WEB-002-sqlite-check.log"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-LEARN-WEB-003",
+      "title": "Crawl4AI external process has wall-clock timeouts + cleanup",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run crawl with a slow child URL and a 1s timeout budget",
+          "expected": "The child page is marked as a timeout failure and the command completes successfully for the root page",
+          "observed": "Exit code 0; failedPages=1; pageFailures[0].reason=timeout; documentsIndexed=1"
+        },
+        {
+          "action": "Check the reported crawl temp directory after the command exits",
+          "expected": "The run-scoped crawl temp dir has been removed",
+          "observed": "The temp dir check reported 'missing'"
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "learn-hardening/web/VAL-LEARN-WEB-003-run.log",
+          "learn-hardening/web/VAL-LEARN-WEB-003-tempdir-check.log"
+        ],
+        "stderr": [
+          "learn-hardening/web/VAL-LEARN-WEB-003-run.log",
+          "learn-hardening/web/VAL-LEARN-WEB-003-tempdir-check.log"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-LEARN-WEB-004",
+      "title": "Crawl4AI retries are observable and expose attempts",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run single-page learn with retry env vars and explicit --fetch-mode get",
+          "expected": "The command succeeds after retries and exposes the total attempts in JSON",
+          "observed": "Exit code 0; documentsIndexed=1; pageAttempts[0].attempts=3"
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "learn-hardening/web/VAL-LEARN-WEB-004b-run.log"
+        ],
+        "stderr": [
+          "learn-hardening/web/VAL-LEARN-WEB-004b-run.log"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-LEARN-WEB-010",
+      "title": "URL normalization ignores fragments",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Learn the same page twice with different fragment identifiers",
+          "expected": "Both runs target the same source identity and only one manifest remains in the project DB",
+          "observed": "Both runs succeeded and db scope reported sourceManifests=1 with a fragment-free sourceKey"
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "learn-hardening/web/VAL-LEARN-WEB-010-run1.log",
+          "learn-hardening/web/VAL-LEARN-WEB-010-run2.log",
+          "learn-hardening/web/VAL-LEARN-WEB-010-db-scope.log"
+        ],
+        "stderr": [
+          "learn-hardening/web/VAL-LEARN-WEB-010-run1.log",
+          "learn-hardening/web/VAL-LEARN-WEB-010-run2.log",
+          "learn-hardening/web/VAL-LEARN-WEB-010-db-scope.log"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-LEARN-WEB-011",
+      "title": "Secret query params do not affect source identity",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Learn the same page twice with different token query values",
+          "expected": "Both URLs resolve to one source manifest and raw secret values do not persist",
+          "observed": "db scope reported one manifest with redacted locators; SQLite inspection reported rawAlpha=false and rawBeta=false"
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "learn-hardening/web/VAL-LEARN-WEB-011-run1.log",
+          "learn-hardening/web/VAL-LEARN-WEB-011-run2.log",
+          "learn-hardening/web/VAL-LEARN-WEB-011-db-scope.log",
+          "learn-hardening/web/VAL-LEARN-WEB-011-sqlite-check.log"
+        ],
+        "stderr": [
+          "learn-hardening/web/VAL-LEARN-WEB-011-run1.log",
+          "learn-hardening/web/VAL-LEARN-WEB-011-run2.log",
+          "learn-hardening/web/VAL-LEARN-WEB-011-db-scope.log",
+          "learn-hardening/web/VAL-LEARN-WEB-011-sqlite-check.log"
+        ]
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "The repo defaults to live provider config, so I used a local OpenAI-compatible embedding/LLM stub server in the isolated workspace to keep the validation offline and deterministic.",
+      "resolved": true,
+      "resolution": "Created a temporary local config pointing embeddings/LLM at http://127.0.0.1:19123/v1 and served deterministic embeddings from the isolated fixture server.",
+      "affectedAssertions": [
+        "VAL-LEARN-WEB-001",
+        "VAL-LEARN-WEB-002",
+        "VAL-LEARN-WEB-003",
+        "VAL-LEARN-WEB-004",
+        "VAL-LEARN-WEB-010",
+        "VAL-LEARN-WEB-011"
+      ]
+    },
+    {
+      "description": "The fake crwl fixture only emits one child link by default, so VAL-LEARN-WEB-001 needed an injected second child link to reach the required two-page failure shape.",
+      "resolved": true,
+      "resolution": "Used CRWL_CHILD_PATH injection to produce two failing child URLs while still exercising the real CLI crawl flow.",
+      "affectedAssertions": [
+        "VAL-LEARN-WEB-001"
+      ]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 6 assertions: 6 passed."
+}
