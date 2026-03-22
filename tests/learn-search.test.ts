@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -12,6 +13,8 @@ import {
   initializeEmptyIndex,
   openDatabase,
   replaceSourceData,
+  searchFts,
+  searchVector,
 } from '../src/db/database';
 import type {
   EmbeddingFingerprint,
@@ -230,6 +233,80 @@ async function runGit(cwd: string, args: string[]): Promise<void> {
   if (exitCode !== 0) {
     throw new Error(stderr);
   }
+}
+
+function seedTiedSearchRows(args: {
+  db: Database;
+  documentId: number;
+  chunkId: number;
+  path: string;
+  content: string;
+  section: string;
+  embedding: number[];
+}): void {
+  const insertDocument = args.db.prepare(`
+    INSERT INTO documents(
+      id,
+      source_key,
+      source_kind,
+      source_locator,
+      canonical_locator,
+      path,
+      language,
+      title,
+      content_hash,
+      content,
+      created_at
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+  `);
+  const insertChunk = args.db.prepare(`
+    INSERT INTO chunks(
+      id,
+      document_id,
+      chunk_index,
+      section,
+      content,
+      token_estimate,
+      content_hash,
+      created_at
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+  `);
+  const insertFts = args.db.prepare(
+    'INSERT INTO chunk_fts(rowid, content, path, section) VALUES (?1, ?2, ?3, ?4)'
+  );
+  const insertVec = args.db.prepare(
+    'INSERT INTO chunk_vec(rowid, embedding) VALUES (?1, ?2)'
+  );
+
+  const createdAt = '2026-03-22T00:00:00.000Z';
+  const sourceLocator = '/repo';
+  const title = args.path.split('/').pop() ?? args.path;
+
+  insertDocument.run(
+    args.documentId,
+    'repo',
+    'local_git',
+    sourceLocator,
+    null,
+    args.path,
+    'md',
+    title,
+    `doc-${args.documentId}`,
+    args.content,
+    createdAt
+  );
+  insertChunk.run(
+    args.chunkId,
+    args.documentId,
+    0,
+    args.section,
+    args.content,
+    10,
+    `chunk-${args.chunkId}`,
+    createdAt
+  );
+  insertFts.run(args.chunkId, args.content, args.path, args.section);
+  insertVec.run(args.chunkId, new Float32Array(args.embedding));
 }
 
 beforeEach(async () => {
@@ -1047,6 +1124,78 @@ describe('learn and search', () => {
     expect(firstRun.results[0]?.documentId).toBeLessThan(
       firstRun.results[1]?.documentId ?? 0
     );
+
+    closeDatabase(db);
+  });
+
+  test('vector retriever orders tied distances by chunk id', async () => {
+    const dbDir = join(tempRoot, 'db');
+    const db = await openDatabase(join(dbDir, 'index.sqlite'));
+    initializeEmptyIndex(
+      db,
+      new TieEmbeddingProvider().fingerprint(baseConfig.index.chunking_version)
+    );
+
+    seedTiedSearchRows({
+      db,
+      documentId: 200,
+      chunkId: 200,
+      path: 'docs/later.md',
+      section: 'later.md',
+      content: 'vector tie alpha',
+      embedding: [10, 0],
+    });
+    seedTiedSearchRows({
+      db,
+      documentId: 100,
+      chunkId: 100,
+      path: 'docs/earlier.md',
+      section: 'earlier.md',
+      content: 'vector tie beta',
+      embedding: [10, 0],
+    });
+
+    const firstRun = searchVector(db, [10, 0], 10);
+    const secondRun = searchVector(db, [10, 0], 10);
+
+    expect(firstRun.map((row) => row.chunkId)).toEqual([100, 200]);
+    expect(secondRun.map((row) => row.chunkId)).toEqual([100, 200]);
+
+    closeDatabase(db);
+  });
+
+  test('fts retriever orders tied bm25 scores by chunk id', async () => {
+    const dbDir = join(tempRoot, 'db');
+    const db = await openDatabase(join(dbDir, 'index.sqlite'));
+    initializeEmptyIndex(
+      db,
+      new FakeEmbeddingProvider().fingerprint(baseConfig.index.chunking_version)
+    );
+
+    seedTiedSearchRows({
+      db,
+      documentId: 200,
+      chunkId: 200,
+      path: 'docs/later.md',
+      section: 'later.md',
+      content: 'alpha beta gamma',
+      embedding: [0, 0, 0, 0],
+    });
+    seedTiedSearchRows({
+      db,
+      documentId: 100,
+      chunkId: 100,
+      path: 'docs/earlier.md',
+      section: 'earlier.md',
+      content: 'alpha beta gamma',
+      embedding: [0, 0, 0, 0],
+    });
+
+    const firstRun = searchFts(db, 'alpha beta', 10);
+    const secondRun = searchFts(db, 'alpha beta', 10);
+
+    expect(firstRun.map((row) => row.chunkId)).toEqual([100, 200]);
+    expect(secondRun.map((row) => row.chunkId)).toEqual([100, 200]);
 
     closeDatabase(db);
   });

@@ -1005,7 +1005,7 @@ export function searchVector(
         JOIN documents ON documents.id = chunks.document_id
         WHERE 1 = 1
         ${suffixClause}
-        ORDER BY vec_hits.distance
+        ORDER BY vec_hits.distance, vec_hits.chunkId
       `
     )
     .all(new Float32Array(embedding), limit, ...pathSuffixes);
@@ -1059,7 +1059,7 @@ export function searchFts(
         JOIN documents ON documents.id = chunks.document_id
         WHERE chunk_fts MATCH ?1
         ${suffixClause}
-        ORDER BY bm25(chunk_fts)
+        ORDER BY bm25(chunk_fts), chunk_fts.rowid
         LIMIT ?2
       `
     )
