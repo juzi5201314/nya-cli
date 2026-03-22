@@ -23,6 +23,7 @@ How validators should test the real user surface for this project.
 - Keep validation offline unless the milestone explicitly requires the Google smoke command.
 - For `learn web` offline validation, use an isolated temp config that points embeddings/LLM at a local OpenAI-compatible stub server; the repo defaults to live provider config and will otherwise try real network providers.
 - `db doctor` validation should start from a no-sidecar state and assert that both the main `index.sqlite` hash and any `index.sqlite-wal` / `index.sqlite-shm` sidecars remain unchanged after inspection.
+- For `search` tie-order checks, a final score tie is easiest to force with a 2-document fixture where vector and FTS rank the docs in opposite order; identical content alone can still produce distinct RRF totals.
 
 ## Per-milestone Smoke (Real Google)
 Run after each milestone validation:
