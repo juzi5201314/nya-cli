@@ -18,6 +18,7 @@ export function renderAiSearchText(result: AiSearchResponse): string {
     `scope: ${result.scope}`,
     `database: ${result.databasePath}`,
     `iterations: ${result.iterations}`,
+    `grounding_status: ${result.groundingStatus}`,
     '',
     'answer:',
     result.answer,

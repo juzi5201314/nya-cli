@@ -243,6 +243,7 @@ class ScriptedLlmProvider implements LlmProvider {
   readonly answerPrompts: string[] = [];
 
   private plannerCallCount = 0;
+  private answerCallCount = 0;
 
   constructor(
     private readonly plannerResponses: Array<{
@@ -250,10 +251,11 @@ class ScriptedLlmProvider implements LlmProvider {
       rationale: string;
       queries: string[];
     }>,
-    private readonly answerResponse: {
+    private readonly answerResponses: Array<{
       answer: string;
-      citationIds: number[];
-    },
+      citationIds?: number[];
+      citations?: Array<{ evidenceId: number; quote?: string }>;
+    }>,
     private readonly structuredOutputFallbackUsed = false
   ) {}
 
@@ -305,8 +307,20 @@ class ScriptedLlmProvider implements LlmProvider {
     }
 
     this.answerPrompts.push(args.prompt);
+    const response =
+      this.answerResponses[
+        Math.min(this.answerCallCount, this.answerResponses.length - 1)
+      ] ?? this.answerResponses[this.answerResponses.length - 1];
+    if (!response) {
+      throw new Error('answerResponses must contain at least one response');
+    }
+    this.answerCallCount += 1;
     return {
-      object: this.answerResponse as T,
+      object: {
+        answer: response.answer,
+        citationIds: response.citationIds ?? [],
+        citations: response.citations ?? [],
+      } as T,
       structuredOutputFallbackUsed: this.structuredOutputFallbackUsed,
     };
   }
@@ -483,6 +497,7 @@ describe('ai-search', () => {
           sourceKind: 'local_git',
         },
       ],
+      groundingStatus: 'grounded',
       structuredOutputFallbackUsed: false,
     });
 
@@ -556,6 +571,7 @@ describe('ai-search', () => {
     expect(
       result.evidence.some((item) => item.excerpt.includes('Gemini'))
     ).toBe(true);
+    expect(result.groundingStatus).toBe('grounded');
     expect(result.structuredOutputFallbackUsed).toBe(false);
     expect(
       result.citations.some((item) => item.excerpt.includes('Gemini'))
@@ -623,10 +639,12 @@ describe('ai-search', () => {
           queries: [],
         },
       ],
-      {
-        answer: 'Gemini and Tavily support agent search.',
-        citationIds: [1],
-      }
+      [
+        {
+          answer: 'Gemini and Tavily support agent search.',
+          citationIds: [1],
+        },
+      ]
     );
 
     const result = await aiSearchIndex({
@@ -651,7 +669,148 @@ describe('ai-search', () => {
       result.evidence.some((item) => item.excerpt.includes(sentinel))
     ).toBe(true);
     expect(result.citations.some((item) => item.excerpt.length > 0)).toBe(true);
-    expect(result.citations[0]?.quote).toBe(result.citations[0]?.snippet);
+    expect(result.groundingStatus).toBe('grounded');
+    expect(result.citations[0]?.quote?.length ?? 0).toBeGreaterThan(0);
+    expect(
+      result.citations[0]?.excerpt.includes(result.citations[0]?.quote ?? '')
+    ).toBe(true);
+
+    closeDatabase(db);
+  });
+
+  test('repairs invalid citation ids once and drops fabricated quotes', async () => {
+    const repoDir = join(tempRoot, 'repo-repair');
+    const dbDir = join(tempRoot, 'db-repair');
+    await mkdir(repoDir, { recursive: true });
+
+    await writeFile(
+      join(repoDir, 'README.md'),
+      '# Search\n\nGemini and Tavily are used to help agents search knowledge.\n'
+    );
+
+    await runGit(repoDir, ['init']);
+    await runGit(repoDir, ['config', 'user.email', 'test@example.com']);
+    await runGit(repoDir, ['config', 'user.name', 'Test User']);
+    await runGit(repoDir, ['add', '.']);
+    await runGit(repoDir, ['commit', '-m', 'initial']);
+
+    const db = await openDatabase(join(dbDir, 'index.sqlite'));
+    const embeddingProvider = new FakeEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      embeddingProvider.fingerprint(config.index.chunking_version)
+    );
+
+    await learnGitSource({
+      source: repoDir,
+      config,
+      db,
+      scope: 'project',
+      scopePaths: {
+        scope: 'project',
+        projectDirName: '.nya-cli',
+        databasePath: join(dbDir, 'index.sqlite'),
+        databaseDir: dbDir,
+        remoteCacheDir: join(tempRoot, 'cache-repair'),
+      },
+      embeddingProvider,
+      rebuildTriggered: false,
+      rebuildReason: null,
+    });
+
+    const llmProvider = new ScriptedLlmProvider(
+      [
+        {
+          enough: false,
+          rationale: 'Need a focused search query.',
+          queries: ['Gemini Tavily agents'],
+        },
+      ],
+      [
+        {
+          answer: 'The repository discusses search tooling.',
+          citations: [
+            {
+              evidenceId: 999,
+              quote: 'fabricated quote that cannot be verified',
+            },
+          ],
+        },
+        {
+          answer: 'The repository discusses search tooling.',
+          citations: [
+            {
+              evidenceId: 1,
+              quote: 'fabricated quote that cannot be verified',
+            },
+          ],
+        },
+      ]
+    );
+
+    const result = await aiSearchIndex({
+      db,
+      embeddingProvider,
+      llmProvider,
+      query: 'Gemini Tavily agents',
+      limit: 5,
+      scope: 'project',
+      databasePath: join(dbDir, 'index.sqlite'),
+      maxSteps: 1,
+      maxQueriesPerStep: 1,
+      maxEvidenceChunks: 5,
+    });
+
+    expect(llmProvider.answerPrompts).toHaveLength(2);
+    expect(result.groundingStatus).toBe('citation_validation_failed');
+    expect(result.citations).toHaveLength(0);
+    expect(result.answer).toContain('未能验证');
+
+    closeDatabase(db);
+  });
+
+  test('returns insufficient evidence status when retrieval finds nothing', async () => {
+    const dbPath = join(tempRoot, 'empty.sqlite');
+    const db = await openDatabase(dbPath);
+    const embeddingProvider = new FakeEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      embeddingProvider.fingerprint(config.index.chunking_version)
+    );
+
+    const llmProvider = new ScriptedLlmProvider(
+      [
+        {
+          enough: false,
+          rationale: 'Try a search query first.',
+          queries: ['nothing-indexed-here'],
+        },
+      ],
+      [
+        {
+          answer: 'This should not be used.',
+          citationIds: [1],
+        },
+      ]
+    );
+
+    const result = await aiSearchIndex({
+      db,
+      embeddingProvider,
+      llmProvider,
+      query: 'nothing-indexed-here',
+      limit: 5,
+      scope: 'project',
+      databasePath: dbPath,
+      maxSteps: 1,
+      maxQueriesPerStep: 1,
+      maxEvidenceChunks: 5,
+    });
+
+    expect(result.groundingStatus).toBe('insufficient_evidence');
+    expect(result.citations).toEqual([]);
+    expect(result.answer).toContain('足够证据');
+    expect(llmProvider.answerPrompts).toHaveLength(0);
 
     closeDatabase(db);
   });
@@ -719,10 +878,12 @@ describe('ai-search', () => {
           queries: ['beta-only-token', 'alpha-only-token'],
         },
       ],
-      {
-        answer: 'Both documents matter.',
-        citationIds: [1, 2],
-      }
+      [
+        {
+          answer: 'Both documents matter.',
+          citationIds: [1, 2],
+        },
+      ]
     );
 
     const result = await aiSearchIndex({
