@@ -53,8 +53,8 @@ retry_max_retries = 3
 retry_delay_seconds = 10
 
 [embedding]
-provider = "openai"
-model = "v5-small-retrieval"
+provider = "google"
+model = "gemini-embedding-001"
 task_type = "RETRIEVAL_DOCUMENT"
 
 [embedding.providers.google]

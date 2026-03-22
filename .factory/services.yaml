@@ -1,0 +1,13 @@
+commands:
+  install: bun install
+  typecheck: bun run typecheck
+  lint: bunx biome check .
+  check: bun run check
+  test: bun test
+  build: bun run build
+  ci: bun run ci
+  smoke_google: bun run smoke:google
+  eval_perf: bun run eval:perf
+  eval_perf_check: bun run eval:perf:check
+
+services: {}
