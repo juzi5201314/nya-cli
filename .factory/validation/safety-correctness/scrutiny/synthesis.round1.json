@@ -1,0 +1,67 @@
+{
+  "milestone": "safety-correctness",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "bun test",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "bun run typecheck",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "bunx biome check .",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 6,
+    "passed": 4,
+    "failed": 2,
+    "failedFeatures": [
+      "safety-url-redaction-and-at-rest-hygiene",
+      "db-doctor-rebuild-health-and-fingerprint-guards"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "safety-url-redaction-and-at-rest-hygiene",
+      "severity": "blocking",
+      "description": "Remote git ingest still clones with the credentialed source URL before rewriting .git/config, so raw credentials can briefly land on disk during cache creation."
+    },
+    {
+      "featureId": "db-doctor-rebuild-health-and-fingerprint-guards",
+      "severity": "blocking",
+      "description": "db doctor can under-report an unhealthy DB when config loading fails because it skips index-state inspection and falls back to failed-manifest checks only."
+    },
+    {
+      "featureId": "db-doctor-rebuild-health-and-fingerprint-guards",
+      "severity": "blocking",
+      "description": "db doctor can crash on an existing DB that lacks index_metadata because read-only stats collection still queries the table without a guard."
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Documented that db doctor uses a temporary read-only snapshot copy of index.sqlite plus -wal/-shm sidecars to inspect state without mutating the live project database.",
+      "sourceFeature": "db-doctor-rebuild-health-and-fingerprint-guards"
+    }
+  ],
+  "suggestedGuidanceUpdates": [],
+  "rejectedObservations": [
+    {
+      "observation": "The worker deviated from the safety-db-worker 'tests first' procedure while iterating on the read-only doctor fix.",
+      "reason": "Not a stable codebase fact or broader guidance change; it is already captured in the review report and does not justify a library or AGENTS update."
+    },
+    {
+      "observation": "The worker deviated from the safety-db-worker procedure by introducing the shared redaction utility before the red tests.",
+      "reason": "Not a stable codebase fact or broader guidance change; it is already captured in the review report and does not justify a library or AGENTS update."
+    }
+  ],
+  "previousRound": null
+}

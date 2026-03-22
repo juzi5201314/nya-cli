@@ -1,6 +1,6 @@
 {
   "milestone": "safety-correctness",
-  "round": 1,
+  "round": 2,
   "status": "fail",
   "validatorsRun": {
     "test": {
@@ -20,48 +20,22 @@
     }
   },
   "reviewsSummary": {
-    "total": 6,
-    "passed": 4,
-    "failed": 2,
+    "total": 2,
+    "passed": 1,
+    "failed": 1,
     "failedFeatures": [
-      "safety-url-redaction-and-at-rest-hygiene",
-      "db-doctor-rebuild-health-and-fingerprint-guards"
+      "fix-remote-git-credential-leak-window"
     ]
   },
   "blockingIssues": [
     {
-      "featureId": "safety-url-redaction-and-at-rest-hygiene",
+      "featureId": "fix-remote-git-credential-leak-window",
       "severity": "blocking",
-      "description": "Remote git ingest still clones with the credentialed source URL before rewriting .git/config, so raw credentials can briefly land on disk during cache creation."
-    },
-    {
-      "featureId": "db-doctor-rebuild-health-and-fingerprint-guards",
-      "severity": "blocking",
-      "description": "db doctor can under-report an unhealthy DB when config loading fails because it skips index-state inspection and falls back to failed-manifest checks only."
-    },
-    {
-      "featureId": "db-doctor-rebuild-health-and-fingerprint-guards",
-      "severity": "blocking",
-      "description": "db doctor can crash on an existing DB that lacks index_metadata because read-only stats collection still queries the table without a guard."
+      "description": "Remote git ingest still passes the raw credential-bearing URL to git fetch/clone, so the leak window remains and raw credentials can still cross the subprocess boundary."
     }
   ],
-  "appliedUpdates": [
-    {
-      "target": "library",
-      "description": "Documented that db doctor uses a temporary read-only snapshot copy of index.sqlite plus -wal/-shm sidecars to inspect state without mutating the live project database.",
-      "sourceFeature": "db-doctor-rebuild-health-and-fingerprint-guards"
-    }
-  ],
+  "appliedUpdates": [],
   "suggestedGuidanceUpdates": [],
-  "rejectedObservations": [
-    {
-      "observation": "The worker deviated from the safety-db-worker 'tests first' procedure while iterating on the read-only doctor fix.",
-      "reason": "Not a stable codebase fact or broader guidance change; it is already captured in the review report and does not justify a library or AGENTS update."
-    },
-    {
-      "observation": "The worker deviated from the safety-db-worker procedure by introducing the shared redaction utility before the red tests.",
-      "reason": "Not a stable codebase fact or broader guidance change; it is already captured in the review report and does not justify a library or AGENTS update."
-    }
-  ],
-  "previousRound": null
+  "rejectedObservations": [],
+  "previousRound": "/root/projects/nya2/.factory/validation/safety-correctness/scrutiny/synthesis.round1.json"
 }
