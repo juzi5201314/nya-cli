@@ -34,6 +34,18 @@ export type LlmProvider = {
     schemaName?: string;
     schemaDescription?: string;
   }): Promise<T>;
+  generateObjectWithFallback<T>(args: {
+    system: string;
+    prompt: string;
+    schema: z.ZodType<T>;
+    schemaName?: string;
+    schemaDescription?: string;
+  }): Promise<GeneratedObjectWithFallback<T>>;
+};
+
+export type GeneratedObjectWithFallback<T> = {
+  object: T;
+  structuredOutputFallbackUsed: boolean;
 };
 
 export type WebSearchResult = {

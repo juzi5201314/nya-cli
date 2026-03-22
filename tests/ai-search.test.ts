@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { APICallError } from 'ai';
+import { z } from 'zod';
 
 import { renderAiSearchText } from '../src/commands/ai-search';
 import { learnGitSource } from '../src/core/ingest/learn-git';
@@ -10,6 +12,7 @@ import {
   initializeEmptyIndex,
   openDatabase,
 } from '../src/db/database';
+import { generateObjectWithFallback as generateObjectWithFallbackHelper } from '../src/providers/llm';
 import type {
   EmbeddingFingerprint,
   EmbeddingProvider,
@@ -189,19 +192,95 @@ class FakeLlmProvider implements LlmProvider {
     };
   }
 
-  async generateObject<T>(args: { schemaName?: string }): Promise<T> {
+  async generateObject<T>(args: {
+    system: string;
+    prompt: string;
+    schema: z.ZodType<T>;
+    schemaName?: string;
+    schemaDescription?: string;
+  }): Promise<T> {
+    return (await this.generateObjectWithFallback(args)).object;
+  }
+
+  async generateObjectWithFallback<T>(args: {
+    system: string;
+    prompt: string;
+    schema: z.ZodType<T>;
+    schemaName?: string;
+    schemaDescription?: string;
+  }): Promise<{
+    object: T;
+    structuredOutputFallbackUsed: boolean;
+  }> {
     if (args.schemaName === 'ai_search_planner') {
       return {
-        enough: false,
-        rationale: 'Need queries',
-        queries: ['gemini tavily agents', 'local search'],
-      } as T;
+        object: {
+          enough: false,
+          rationale: 'Need queries',
+          queries: ['gemini tavily agents', 'local search'],
+        } as T,
+        structuredOutputFallbackUsed: false,
+      };
     }
 
     return {
-      answer: '本地知识库显示 Gemini 和 Tavily 被用于 agent 搜索。',
-      citationIds: [1, 2],
-    } as T;
+      object: {
+        answer: '本地知识库显示 Gemini 和 Tavily 被用于 agent 搜索。',
+        citationIds: [1, 2],
+      } as T,
+      structuredOutputFallbackUsed: false,
+    };
+  }
+}
+
+class FallbackLlmProvider implements LlmProvider {
+  readonly id = 'google' as const;
+  readonly model = 'fake-llm';
+
+  async generateText(): Promise<{ text: string }> {
+    return {
+      text: 'unused',
+    };
+  }
+
+  async generateObject<T>(args: {
+    system: string;
+    prompt: string;
+    schema: z.ZodType<T>;
+    schemaName?: string;
+    schemaDescription?: string;
+  }): Promise<T> {
+    return (await this.generateObjectWithFallback(args)).object;
+  }
+
+  async generateObjectWithFallback<T>(args: {
+    system: string;
+    prompt: string;
+    schema: z.ZodType<T>;
+    schemaName?: string;
+    schemaDescription?: string;
+  }): Promise<{
+    object: T;
+    structuredOutputFallbackUsed: boolean;
+  }> {
+    if (args.schemaName === 'ai_search_planner') {
+      return {
+        object: {
+          enough: false,
+          rationale: 'Need queries',
+          queries: ['gemini tavily agents'],
+        } as T,
+        structuredOutputFallbackUsed: false,
+      };
+    }
+
+    return {
+      object: {
+        answer: '本地知识库显示 Gemini 和 Tavily 被用于 agent 搜索。',
+        citationIds: [1],
+      } as T,
+      structuredOutputFallbackUsed: true,
+    };
   }
 }
 
@@ -256,6 +335,7 @@ describe('ai-search', () => {
           sourceKind: 'local_git',
         },
       ],
+      structuredOutputFallbackUsed: false,
     });
 
     expect(rendered).toContain('[1] doc=12 README.md :: Intro');
@@ -325,6 +405,143 @@ describe('ai-search', () => {
     expect(result.citations[0]?.documentId).toBeGreaterThan(0);
     expect(result.citations[0]?.sourceKey).toBe(repoDir);
     expect(result.evidence[0]?.documentId).toBeGreaterThan(0);
+    expect(result.structuredOutputFallbackUsed).toBe(false);
     closeDatabase(db);
+  });
+
+  test('propagates structured output fallback through ai-search responses', async () => {
+    const repoDir = join(tempRoot, 'repo-fallback');
+    const dbDir = join(tempRoot, 'db-fallback');
+    await mkdir(repoDir, { recursive: true });
+
+    await writeFile(
+      join(repoDir, 'README.md'),
+      '# Search\n\nGemini and Tavily are used to help agents search knowledge.\n'
+    );
+
+    await runGit(repoDir, ['init']);
+    await runGit(repoDir, ['config', 'user.email', 'test@example.com']);
+    await runGit(repoDir, ['config', 'user.name', 'Test User']);
+    await runGit(repoDir, ['add', '.']);
+    await runGit(repoDir, ['commit', '-m', 'initial']);
+
+    const db = await openDatabase(join(dbDir, 'index.sqlite'));
+    const embeddingProvider = new FakeEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      embeddingProvider.fingerprint(config.index.chunking_version)
+    );
+
+    await learnGitSource({
+      source: repoDir,
+      config,
+      db,
+      scope: 'project',
+      scopePaths: {
+        scope: 'project',
+        projectDirName: '.nya-cli',
+        databasePath: join(dbDir, 'index.sqlite'),
+        databaseDir: dbDir,
+        remoteCacheDir: join(tempRoot, 'cache-fallback'),
+      },
+      embeddingProvider,
+      rebuildTriggered: false,
+      rebuildReason: null,
+    });
+
+    const result = await aiSearchIndex({
+      db,
+      embeddingProvider,
+      llmProvider: new FallbackLlmProvider(),
+      query: 'Gemini 和 Tavily 如何用于 agent 搜索？',
+      limit: 5,
+      scope: 'project',
+      databasePath: join(dbDir, 'index.sqlite'),
+      maxSteps: 2,
+      maxQueriesPerStep: 2,
+      maxEvidenceChunks: 5,
+    });
+
+    expect(result.structuredOutputFallbackUsed).toBe(true);
+    expect(result.answer).toContain('Gemini');
+    closeDatabase(db);
+  });
+});
+
+describe('structured output fallback helper', () => {
+  test('falls back to text parsing when JSON mode is rejected', async () => {
+    const schema = z.object({ answer: z.string() });
+    let generateObjectCalls = 0;
+    let generateTextCalls = 0;
+
+    const result = await generateObjectWithFallbackHelper({
+      system: 'system',
+      prompt: 'prompt',
+      schema,
+      generateObjectImpl: async () => {
+        generateObjectCalls += 1;
+        throw new APICallError({
+          message: 'The model rejected JSON mode.',
+          url: 'https://generative.example/v1',
+          requestBodyValues: {},
+          statusCode: 400,
+          responseBody: JSON.stringify({
+            error: {
+              code: 400,
+              message:
+                'responseMimeType application/json is not supported for this model',
+              status: 'INVALID_ARGUMENT',
+            },
+          }),
+        });
+      },
+      generateTextImpl: async () => {
+        generateTextCalls += 1;
+        return {
+          text: '{"answer":"fallback answer"}',
+        };
+      },
+    });
+
+    expect(generateObjectCalls).toBe(1);
+    expect(generateTextCalls).toBe(1);
+    expect(result.structuredOutputFallbackUsed).toBe(true);
+    expect(result.object).toEqual({ answer: 'fallback answer' });
+  });
+
+  test('does not fall back for unrelated API errors', async () => {
+    const schema = z.object({ answer: z.string() });
+    let generateTextCalls = 0;
+
+    await expect(
+      generateObjectWithFallbackHelper({
+        system: 'system',
+        prompt: 'prompt',
+        schema,
+        generateObjectImpl: async () => {
+          throw new APICallError({
+            message: 'invalid api key',
+            url: 'https://generative.example/v1',
+            requestBodyValues: {},
+            statusCode: 400,
+            responseBody: JSON.stringify({
+              error: {
+                code: 400,
+                message: 'invalid api key',
+                status: 'INVALID_ARGUMENT',
+              },
+            }),
+          });
+        },
+        generateTextImpl: async () => {
+          generateTextCalls += 1;
+          return {
+            text: '{"answer":"should not be used"}',
+          };
+        },
+      })
+    ).rejects.toThrow('invalid api key');
+
+    expect(generateTextCalls).toBe(0);
   });
 });

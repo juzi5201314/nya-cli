@@ -25,6 +25,10 @@ export function renderAiSearchText(result: AiSearchResponse): string {
     `used_queries: ${result.usedQueries.length}`,
   ];
 
+  if (result.structuredOutputFallbackUsed) {
+    lines.push('structured_output_fallback_used: true');
+  }
+
   for (const query of result.usedQueries) {
     lines.push(`- ${query}`);
   }

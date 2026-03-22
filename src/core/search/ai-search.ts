@@ -10,11 +10,13 @@ type PlannerResult = {
   enough: boolean;
   rationale: string;
   queries: string[];
+  structuredOutputFallbackUsed: boolean;
 };
 
 type AnswerResult = {
   answer: string;
   citationIds: number[];
+  structuredOutputFallbackUsed: boolean;
 };
 
 type EvidenceRecord = SearchResult & {
@@ -48,6 +50,7 @@ export type AiSearchResponse = {
     score: number;
     sourceKind: string;
   }>;
+  structuredOutputFallbackUsed: boolean;
 };
 
 const plannerSchema = z.object({
@@ -148,7 +151,7 @@ async function planQueries(args: {
     'Only search the local knowledge base. Do not suggest web searches.',
   ].join('\n');
 
-  const result = await args.llmProvider.generateObject({
+  const result = await args.llmProvider.generateObjectWithFallback({
     system:
       'You are a retrieval planner. Produce concise search queries for a local knowledge base. Never answer the question directly here.',
     prompt,
@@ -159,9 +162,10 @@ async function planQueries(args: {
   });
 
   return {
-    enough: result.enough,
-    rationale: result.rationale,
-    queries: result.queries.slice(0, args.maxQueriesPerStep),
+    enough: result.object.enough,
+    rationale: result.object.rationale,
+    queries: result.object.queries.slice(0, args.maxQueriesPerStep),
+    structuredOutputFallbackUsed: result.structuredOutputFallbackUsed,
   };
 }
 
@@ -174,6 +178,7 @@ async function synthesizeAnswer(args: {
     return {
       answer: '未在当前本地知识库中找到足够证据来回答这个问题。',
       citationIds: [],
+      structuredOutputFallbackUsed: false,
     };
   }
 
@@ -188,7 +193,7 @@ async function synthesizeAnswer(args: {
     'The citationIds array must only contain evidence ids that directly support the answer.',
   ].join('\n');
 
-  return args.llmProvider.generateObject({
+  const result = await args.llmProvider.generateObjectWithFallback({
     system:
       'You are a grounded answerer. Use only the provided local knowledge base evidence. Do not invent facts or citations.',
     prompt,
@@ -197,6 +202,12 @@ async function synthesizeAnswer(args: {
     schemaDescription:
       'Produces a grounded answer and the ids of evidence items that support it.',
   });
+
+  return {
+    answer: result.object.answer,
+    citationIds: result.object.citationIds,
+    structuredOutputFallbackUsed: result.structuredOutputFallbackUsed,
+  };
 }
 
 export async function aiSearchIndex(args: {
@@ -214,6 +225,7 @@ export async function aiSearchIndex(args: {
   const usedQueries: string[] = [];
   const evidenceMap = new Map<number, EvidenceRecord>();
   let iterations = 0;
+  let structuredOutputFallbackUsed = false;
 
   for (let step = 0; step < args.maxSteps; step += 1) {
     const currentEvidence = rankEvidence(evidenceMap, args.maxEvidenceChunks);
@@ -224,6 +236,7 @@ export async function aiSearchIndex(args: {
       evidence: currentEvidence,
       maxQueriesPerStep: args.maxQueriesPerStep,
     });
+    structuredOutputFallbackUsed ||= planner.structuredOutputFallbackUsed;
 
     let queries = dedupeQueries(planner.queries, usedQueries).slice(
       0,
@@ -270,6 +283,7 @@ export async function aiSearchIndex(args: {
     userQuery: args.query,
     evidence: rankedEvidence,
   });
+  structuredOutputFallbackUsed ||= answer.structuredOutputFallbackUsed;
 
   const citations = rankedEvidence.filter((item) =>
     answer.citationIds.includes(item.evidenceId)
@@ -302,5 +316,6 @@ export async function aiSearchIndex(args: {
       score: item.score,
       sourceKind: item.sourceKind,
     })),
+    structuredOutputFallbackUsed,
   };
 }

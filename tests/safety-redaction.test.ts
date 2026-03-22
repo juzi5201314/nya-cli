@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { z } from 'zod';
 import { printOutput } from '../src/commands/shared';
 import { learnGitSource } from '../src/core/ingest/learn-git';
 import { learnWebSource } from '../src/core/ingest/learn-web';
@@ -220,22 +221,43 @@ class CapturingLlmProvider implements LlmProvider {
   async generateObject<T>(args: {
     system: string;
     prompt: string;
+    schema: z.ZodType<T>;
     schemaName?: string;
+    schemaDescription?: string;
   }): Promise<T> {
+    return (await this.generateObjectWithFallback(args)).object;
+  }
+
+  async generateObjectWithFallback<T>(args: {
+    system: string;
+    prompt: string;
+    schema: z.ZodType<T>;
+    schemaName?: string;
+    schemaDescription?: string;
+  }): Promise<{
+    object: T;
+    structuredOutputFallbackUsed: boolean;
+  }> {
     if (args.schemaName === 'ai_search_planner') {
       this.plannerPrompts.push(args.prompt);
       return {
-        enough: false,
-        rationale: 'need one more query',
-        queries: ['secret marker'],
-      } as T;
+        object: {
+          enough: false,
+          rationale: 'need one more query',
+          queries: ['secret marker'],
+        } as T,
+        structuredOutputFallbackUsed: false,
+      };
     }
 
     this.answerPrompts.push(args.prompt);
     return {
-      answer: 'grounded answer',
-      citationIds: [1],
-    } as T;
+      object: {
+        answer: 'grounded answer',
+        citationIds: [1],
+      } as T,
+      structuredOutputFallbackUsed: false,
+    };
   }
 }
 

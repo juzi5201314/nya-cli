@@ -1,14 +1,42 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
-import { APICallError, generateObject, generateText } from 'ai';
+import {
+  APICallError,
+  generateObject,
+  generateText,
+  NoObjectGeneratedError,
+} from 'ai';
 import type { z } from 'zod';
 import type { ProgressReporter, TokenUsage } from '../tui/types';
 import type { AppConfig } from '../types/config';
 import { createFetchWithPolicies } from '../utils/fetch';
 import { estimateTokens } from '../utils/text';
-import type { LlmProvider } from './types';
+import type { GeneratedObjectWithFallback, LlmProvider } from './types';
 
 type LanguageModelArg = Parameters<typeof generateText>[0]['model'];
+
+type GenerateObjectImpl = <T>(args: {
+  model: LanguageModelArg;
+  system: string;
+  prompt: string;
+  schema: z.ZodType<T>;
+  schemaName?: string;
+  schemaDescription?: string;
+  maxRetries?: number;
+}) => Promise<{
+  object: T;
+  usage?: TokenUsage;
+}>;
+
+type GenerateTextImpl = (args: {
+  model: LanguageModelArg;
+  system: string;
+  prompt: string;
+  maxRetries?: number;
+}) => Promise<{
+  text: string;
+  usage?: TokenUsage;
+}>;
 
 function readRequiredEnv(name: string): string {
   const value = process.env[name];
@@ -39,27 +67,33 @@ function extractJsonCandidate(text: string): string {
   return text.trim();
 }
 
-async function generateObjectWithFallback<T>(args: {
-  model: LanguageModelArg;
+export async function generateObjectWithFallback<T>(args: {
+  model?: LanguageModelArg;
   system: string;
   prompt: string;
   schema: z.ZodType<T>;
   schemaName?: string;
   schemaDescription?: string;
+  generateObjectImpl?: GenerateObjectImpl;
+  generateTextImpl?: GenerateTextImpl;
   progress?: ProgressReporter;
-}): Promise<T> {
+}): Promise<GeneratedObjectWithFallback<T>> {
   try {
-    const result = await generateObject({
-      model: args.model,
+    const generateObjectFn: GenerateObjectImpl =
+      args.generateObjectImpl ?? (generateObject as GenerateObjectImpl);
+    const result = await generateObjectFn({
+      model: args.model as LanguageModelArg,
       system: args.system,
       prompt: args.prompt,
       schema: args.schema,
-      schemaName: args.schemaName,
-      schemaDescription: args.schemaDescription,
+      ...(args.schemaName ? { schemaName: args.schemaName } : {}),
+      ...(args.schemaDescription
+        ? { schemaDescription: args.schemaDescription }
+        : {}),
       maxRetries: 0,
     });
-    const usage = result.usage as TokenUsage;
-    if (Number.isFinite(usage.totalTokens ?? NaN)) {
+    const usage = result.usage as TokenUsage | undefined;
+    if (usage && Number.isFinite(usage.totalTokens ?? NaN)) {
       args.progress?.addLlmUsage(usage, false);
     } else {
       const input = estimateTokens([args.system, args.prompt].join('\n'));
@@ -68,16 +102,19 @@ async function generateObjectWithFallback<T>(args: {
         true
       );
     }
-    return result.object;
+    return {
+      object: result.object,
+      structuredOutputFallbackUsed: false,
+    };
   } catch (error) {
-    // generateObject 失败如果来自 HTTP/API 错误（含 429），fallback 只会额外消耗一次请求
-    // 这类错误应当直接抛出，让上层决定如何处理
-    if (APICallError.isInstance(error)) {
+    if (!shouldFallbackToTextParse(error)) {
       throw error;
     }
 
-    const textResult = await generateText({
-      model: args.model,
+    const generateTextFn: GenerateTextImpl =
+      args.generateTextImpl ?? (generateText as GenerateTextImpl);
+    const textResult = await generateTextFn({
+      model: args.model as LanguageModelArg,
       system: args.system,
       prompt: [
         args.prompt,
@@ -86,8 +123,8 @@ async function generateObjectWithFallback<T>(args: {
       ].join('\n'),
       maxRetries: 0,
     });
-    const usage = textResult.usage as TokenUsage;
-    if (Number.isFinite(usage.totalTokens ?? NaN)) {
+    const usage = textResult.usage as TokenUsage | undefined;
+    if (usage && Number.isFinite(usage.totalTokens ?? NaN)) {
       args.progress?.addLlmUsage(usage, false);
     } else {
       const input = estimateTokens([args.system, args.prompt].join('\n'));
@@ -102,8 +139,100 @@ async function generateObjectWithFallback<T>(args: {
       );
     }
     const json = JSON.parse(extractJsonCandidate(textResult.text));
-    return args.schema.parse(json);
+    return {
+      object: args.schema.parse(json),
+      structuredOutputFallbackUsed: true,
+    };
   }
+}
+
+const structuredOutputCompatibilityHints = [
+  'json mode',
+  'response mime type',
+  'response_mime_type',
+  'structured output',
+  'structured outputs',
+  'response format',
+  'response_format',
+  'application/json',
+  'json schema',
+  'schema is not supported',
+  'not supported',
+  'unsupported',
+  'content-filter',
+  'content filter',
+];
+
+function collectErrorText(
+  error: unknown,
+  seen = new WeakSet<object>()
+): string {
+  if (error == null) {
+    return '';
+  }
+
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  if (typeof error !== 'object') {
+    return String(error);
+  }
+
+  if (seen.has(error)) {
+    return '';
+  }
+  seen.add(error);
+
+  const parts: string[] = [];
+  const record = error as Record<string, unknown>;
+
+  for (const key of [
+    'name',
+    'message',
+    'statusCode',
+    'responseBody',
+    'finishReason',
+    'text',
+  ]) {
+    const value = record[key];
+    if (value != null) {
+      parts.push(String(value));
+    }
+  }
+
+  if (record.data != null) {
+    try {
+      parts.push(JSON.stringify(record.data));
+    } catch {
+      parts.push(String(record.data));
+    }
+  }
+
+  if (record.cause != null) {
+    parts.push(collectErrorText(record.cause, seen));
+  }
+
+  return parts.join('\n');
+}
+
+function shouldFallbackToTextParse(error: unknown): boolean {
+  const haystack = collectErrorText(error).toLowerCase();
+  if (
+    !structuredOutputCompatibilityHints.some((hint) => haystack.includes(hint))
+  ) {
+    return false;
+  }
+
+  if (APICallError.isInstance(error)) {
+    return (
+      error.statusCode === 400 ||
+      error.statusCode === 406 ||
+      error.statusCode === 415
+    );
+  }
+
+  return NoObjectGeneratedError.isInstance(error);
 }
 
 export function createLlmProvider(
@@ -163,6 +292,27 @@ export function createLlmProvider(
           schemaName?: string;
           schemaDescription?: string;
         }): Promise<T> {
+          return (
+            await generateObjectWithFallback({
+              model,
+              system: args.system,
+              prompt: args.prompt,
+              schema: args.schema,
+              ...(args.schemaName ? { schemaName: args.schemaName } : {}),
+              ...(args.schemaDescription
+                ? { schemaDescription: args.schemaDescription }
+                : {}),
+              ...(progress ? { progress } : {}),
+            })
+          ).object;
+        },
+        async generateObjectWithFallback<T>(args: {
+          system: string;
+          prompt: string;
+          schema: z.ZodType<T>;
+          schemaName?: string;
+          schemaDescription?: string;
+        }): Promise<GeneratedObjectWithFallback<T>> {
           return generateObjectWithFallback({
             model,
             system: args.system,
@@ -230,6 +380,27 @@ export function createLlmProvider(
           schemaName?: string;
           schemaDescription?: string;
         }): Promise<T> {
+          return (
+            await generateObjectWithFallback({
+              model,
+              system: args.system,
+              prompt: args.prompt,
+              schema: args.schema,
+              ...(args.schemaName ? { schemaName: args.schemaName } : {}),
+              ...(args.schemaDescription
+                ? { schemaDescription: args.schemaDescription }
+                : {}),
+              ...(progress ? { progress } : {}),
+            })
+          ).object;
+        },
+        async generateObjectWithFallback<T>(args: {
+          system: string;
+          prompt: string;
+          schema: z.ZodType<T>;
+          schemaName?: string;
+          schemaDescription?: string;
+        }): Promise<GeneratedObjectWithFallback<T>> {
           return generateObjectWithFallback({
             model,
             system: args.system,
