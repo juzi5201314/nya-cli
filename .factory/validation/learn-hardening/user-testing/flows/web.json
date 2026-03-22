@@ -22,12 +22,8 @@
         }
       ],
       "evidence": {
-        "stdout": [
-          "learn-hardening/web/VAL-LEARN-WEB-001-run.log"
-        ],
-        "stderr": [
-          "learn-hardening/web/VAL-LEARN-WEB-001-run.log"
-        ]
+        "stdout": ["learn-hardening/web/VAL-LEARN-WEB-001-run.log"],
+        "stderr": ["learn-hardening/web/VAL-LEARN-WEB-001-run.log"]
       },
       "issues": null
     },
@@ -101,12 +97,8 @@
         }
       ],
       "evidence": {
-        "stdout": [
-          "learn-hardening/web/VAL-LEARN-WEB-004b-run.log"
-        ],
-        "stderr": [
-          "learn-hardening/web/VAL-LEARN-WEB-004b-run.log"
-        ]
+        "stdout": ["learn-hardening/web/VAL-LEARN-WEB-004b-run.log"],
+        "stderr": ["learn-hardening/web/VAL-LEARN-WEB-004b-run.log"]
       },
       "issues": null
     },
@@ -181,9 +173,7 @@
       "description": "The fake crwl fixture only emits one child link by default, so VAL-LEARN-WEB-001 needed an injected second child link to reach the required two-page failure shape.",
       "resolved": true,
       "resolution": "Used CRWL_CHILD_PATH injection to produce two failing child URLs while still exercising the real CLI crawl flow.",
-      "affectedAssertions": [
-        "VAL-LEARN-WEB-001"
-      ]
+      "affectedAssertions": ["VAL-LEARN-WEB-001"]
     }
   ],
   "blockers": [],

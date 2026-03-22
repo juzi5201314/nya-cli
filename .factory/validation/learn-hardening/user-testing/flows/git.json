@@ -77,12 +77,8 @@
         }
       ],
       "evidence": {
-        "stdout": [
-          "learn-hardening/git/VAL-LEARN-GIT-003-run.stdout.txt"
-        ],
-        "stderr": [
-          "learn-hardening/git/VAL-LEARN-GIT-003-run.stderr.txt"
-        ]
+        "stdout": ["learn-hardening/git/VAL-LEARN-GIT-003-run.stdout.txt"],
+        "stderr": ["learn-hardening/git/VAL-LEARN-GIT-003-run.stderr.txt"]
       },
       "issues": null
     },

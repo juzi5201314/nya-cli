@@ -106,6 +106,23 @@ function computeQueryAwareBoost(
   return boost;
 }
 
+function shouldRequireLexicalMatch(query: string): boolean {
+  const trimmed = query.trim();
+  if (trimmed.length === 0 || /\s/.test(trimmed)) {
+    return false;
+  }
+
+  if (compactSearchText(trimmed).length < 8) {
+    return false;
+  }
+
+  return (
+    /[0-9]/.test(trimmed) ||
+    /[_./-]/.test(trimmed) ||
+    (/[a-z]/.test(trimmed) && /[A-Z]/.test(trimmed))
+  );
+}
+
 export async function searchIndex(args: {
   db: Database;
   embeddingProvider: EmbeddingProvider;
@@ -117,6 +134,7 @@ export async function searchIndex(args: {
 }): Promise<SearchResponse> {
   const extensions = normalizeSearchExtensions(args.extensions);
   const candidateLimit = Math.max(args.limit * 3, args.limit + 8);
+  const requireLexicalMatch = shouldRequireLexicalMatch(args.query);
   const queryEmbedding = await args.embeddingProvider.embedQuery(args.query);
   const vectorHits = searchVector(
     args.db,
@@ -135,6 +153,21 @@ export async function searchIndex(args: {
     candidateLimit,
     extensions
   );
+
+  if (
+    requireLexicalMatch &&
+    ftsHits.length === 0 &&
+    lexicalHits.length === 0 &&
+    metadataHits.length === 0
+  ) {
+    return {
+      query: args.query,
+      scope: args.scope,
+      databasePath: args.databasePath,
+      extensions,
+      results: [],
+    };
+  }
 
   const scores = new Map<number, number>();
   for (const hit of vectorHits) {

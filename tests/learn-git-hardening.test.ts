@@ -323,6 +323,26 @@ describe('learn git hardening', () => {
       expect(getDbStats(db).documents).toBe(1);
       expect(findDocumentsByPath(db, 'guide.ts', repoDir)).toHaveLength(0);
       expect(findDocumentsByPath(db, 'README.md', repoDir)).toHaveLength(1);
+
+      const missingMarkerSearch = await searchIndex({
+        db,
+        embeddingProvider: provider,
+        query: 'beta456deleted',
+        limit: 5,
+        scope: 'project',
+        databasePath: dbPath,
+      });
+      const semanticSearch = await searchIndex({
+        db,
+        embeddingProvider: provider,
+        query: 'stable indexing',
+        limit: 5,
+        scope: 'project',
+        databasePath: dbPath,
+      });
+
+      expect(missingMarkerSearch.results).toHaveLength(0);
+      expect(semanticSearch.results[0]?.path).toBe('README.md');
     } finally {
       closeDatabase(db);
     }
@@ -477,6 +497,26 @@ describe('learn git hardening', () => {
       expect(result.documentsIndexed).toBe(1);
       expect(findDocumentsByPath(db, 'tracked.md', repoDir)).toHaveLength(1);
       expect(findDocumentsByPath(db, 'untracked.md', repoDir)).toHaveLength(0);
+
+      const missingMarkerSearch = await searchIndex({
+        db,
+        embeddingProvider: provider,
+        query: 'gamma789untracked',
+        limit: 5,
+        scope: 'project',
+        databasePath: dbPath,
+      });
+      const semanticSearch = await searchIndex({
+        db,
+        embeddingProvider: provider,
+        query: 'tracked searchable',
+        limit: 5,
+        scope: 'project',
+        databasePath: dbPath,
+      });
+
+      expect(missingMarkerSearch.results).toHaveLength(0);
+      expect(semanticSearch.results[0]?.path).toBe('tracked.md');
     } finally {
       closeDatabase(db);
     }
