@@ -1,0 +1,33 @@
+{
+  "featureId": "fix-scrutiny-reviewer-subagent-model-id",
+  "reviewedAt": "2026-03-23T10:27:55Z",
+  "commitId": "dcb66b312c328cbf28098e58bf465b3fa2b25116",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The fix proves reviewer launch in the author's current session, but it does not actually remove the environment-specific custom-model dependency that caused the original scrutiny blocker.",
+    "issues": [
+      {
+        "file": ".factory/droids/scrutiny-feature-reviewer.md",
+        "line": 5,
+        "severity": "blocking",
+        "description": "The repo-scoped override still hardcodes `model: custom:GPT-5.4-mini-[cch]-2`, which only works when that exact personal custom model is registered in `~/.factory/settings.json`. The transcript shows the worker had to inspect personal settings and switch from `gpt-5.4-mini` to this locally registered custom id before the trivial Task probe returned `launch-ok`, so the commit does not eliminate the same class of model-id/config dependency that previously broke scrutiny launches. The same portability issue is duplicated in `.factory/droids/user-testing-flow-validator.md:5`."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The `ops-worker` skill does not cover repo-scoped droid/model override work, so the worker had to improvise repeated Task probes and manual inspection of personal Factory settings to choose a model id.",
+      "evidence": "`/root/projects/nya2/.factory/skills/ops-worker/SKILL.md` only describes scripts/smoke/build work, while transcript line 44 shows repeated Task probes plus reads of `/root/.factory/settings.json` and mission/session model settings before settling on `custom:GPT-5.4-mini-[cch]-2`."
+    },
+    {
+      "area": "knowledge",
+      "observation": "Shared mission/project guidance does not document that validation droids should avoid environment-specific `custom:*` ids and prefer Task-portable model ids, even though this exact milestone was blocked by model-id incompatibility.",
+      "evidence": "`/root/.factory/missions/6586b515-2320-4b22-9fa5-669b0710e675/AGENTS.md` and `/root/projects/nya2/.factory/library/` contain no droid/model guidance, while the prior synthesis at `/root/projects/nya2/.factory/validation/ai-search-quality/scrutiny/synthesis.json` records the original `Invalid model: custom:GPT-5.3-codex` blocker and the transcript shows the worker exploring settings to find a launchable replacement."
+    }
+  ],
+  "addressesFailureFrom": "/root/projects/nya2/.factory/validation/ai-search-quality/scrutiny/synthesis.json",
+  "summary": "Fail: the commit makes trivial probes pass in this environment, but it still pins both validation droids to a personal custom model id, so the original reviewer-launch blocker is not robustly resolved."
+}

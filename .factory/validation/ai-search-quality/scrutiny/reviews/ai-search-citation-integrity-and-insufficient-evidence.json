@@ -1,28 +1,22 @@
 {
   "featureId": "ai-search-citation-integrity-and-insufficient-evidence",
-  "reviewedAt": "2026-03-23T03:29:12Z",
+  "reviewedAt": "2026-03-23T10:29:16Z",
   "commitId": "b942a2c",
-  "transcriptSkeletonReviewed": false,
-  "diffReviewed": false,
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "Review subagent did not run because Task launch failed before execution.",
+    "summary": "I reviewed the worker transcript skeleton, handoff, skill guidance, and commit b942a2c. The feature correctly adds citation repair, quote validation, and explicit groundingStatus states, but it still rejects a valid model output shape: `citations: [1, 2]`. Because the new answer schema only accepts citation objects in `citations`, ai-search can fail citation validation before the repair logic even gets a chance to normalize otherwise-valid evidence ids.",
     "issues": [
       {
-        "file": ".factory/missions/6586b515-2320-4b22-9fa5-669b0710e675/model-settings.json",
-        "line": 1,
+        "file": "src/core/search/ai-search.ts",
+        "line": 88,
         "severity": "blocking",
-        "description": "Could not launch scrutiny reviewer for worker session 97013b28-7531-467e-b42a-a9fede879927: Task returned \"Invalid model: custom:GPT-5.3-codex\" before any transcript/diff review."
+        "description": "`answerSchema` only permits `citations` entries shaped like `{ evidenceId, quote? }`, even though the prompt now asks the model for a `citations` array and the code intends to validate ids after parsing. If the model returns a common compact form like `citations: [1]`, Zod rejects the response before `extractAnswerCitations`/repair can normalize it, causing valid citations to be dropped or the answer generation to fail. This violates the feature goal of reliably validating citationIds/evidenceId mappings. The missing compatibility path is also visible in `extractAnswerCitations` (same file, lines 232-257 in b942a2c), which assumes every `citations` entry already has an `evidenceId` property, and in `tests/ai-search.test.ts`, which added no regression covering numeric `citations` arrays."
       }
     ]
   },
-  "sharedStateObservations": [
-    {
-      "area": "skills",
-      "observation": "Scrutiny workflow lacks an explicit fallback path when reviewer subagent launch fails due invalid model configuration.",
-      "evidence": "Task launch for scrutiny-feature-reviewer repeatedly failed in this session with `Invalid model: custom:GPT-5.3-codex` before review execution."
-    }
-  ],
+  "sharedStateObservations": [],
   "addressesFailureFrom": null,
-  "summary": "Fail: reviewer subagent failed to launch due model configuration mismatch; feature could not be reviewed."
+  "summary": "Fail: the feature largely implements citation repair and explicit grounding states, but commit b942a2c missed support for numeric entries inside the new `citations` array shape, so ai-search can still reject otherwise-valid citation mappings from model output."
 }

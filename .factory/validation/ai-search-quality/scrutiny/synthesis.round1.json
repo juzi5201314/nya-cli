@@ -1,0 +1,75 @@
+{
+  "milestone": "ai-search-quality",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "bun test",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "bun run typecheck",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "bunx biome check .",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 0,
+    "failed": 4,
+    "failedFeatures": [
+      "ai-search-evidence-excerpts-and-citation-executability",
+      "ai-search-prompt-safety-and-secret-redaction",
+      "ai-search-citation-integrity-and-insufficient-evidence",
+      "ai-search-config-defaults-and-overrides"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "ai-search-evidence-excerpts-and-citation-executability",
+      "severity": "blocking",
+      "description": "Unable to spawn scrutiny reviewer subagent: Task tool exited immediately with `Invalid model: custom:GPT-5.3-codex` before transcript/diff review could start.",
+      "suggestedFix": "Normalize mission/session validation worker model ids to a valid identifier (for example `gpt-5.3-codex` or `custom:gpt-5.3-codex`) and rerun scrutiny validation for this milestone."
+    },
+    {
+      "featureId": "ai-search-prompt-safety-and-secret-redaction",
+      "severity": "blocking",
+      "description": "Unable to spawn scrutiny reviewer subagent: Task tool exited immediately with `Invalid model: custom:GPT-5.3-codex` before transcript/diff review could start.",
+      "suggestedFix": "Normalize mission/session validation worker model ids to a valid identifier (for example `gpt-5.3-codex` or `custom:gpt-5.3-codex`) and rerun scrutiny validation for this milestone."
+    },
+    {
+      "featureId": "ai-search-citation-integrity-and-insufficient-evidence",
+      "severity": "blocking",
+      "description": "Unable to spawn scrutiny reviewer subagent: Task tool exited immediately with `Invalid model: custom:GPT-5.3-codex` before transcript/diff review could start.",
+      "suggestedFix": "Normalize mission/session validation worker model ids to a valid identifier (for example `gpt-5.3-codex` or `custom:gpt-5.3-codex`) and rerun scrutiny validation for this milestone."
+    },
+    {
+      "featureId": "ai-search-config-defaults-and-overrides",
+      "severity": "blocking",
+      "description": "Unable to spawn scrutiny reviewer subagent: Task tool exited immediately with `Invalid model: custom:GPT-5.3-codex` before transcript/diff review could start.",
+      "suggestedFix": "Normalize mission/session validation worker model ids to a valid identifier (for example `gpt-5.3-codex` or `custom:gpt-5.3-codex`) and rerun scrutiny validation for this milestone."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "scrutiny-validator skill",
+      "suggestion": "Add explicit fallback instructions for reviewer-launch failures (model/config mismatch), including required synthesis fields and EndFeatureRun failure handoff shape.",
+      "evidence": "This run repeatedly failed to launch `scrutiny-feature-reviewer` with `Invalid model: custom:GPT-5.3-codex`, which prevented any feature-level review despite validators passing.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Mark scrutiny as pass when validators pass even if reviewer subagents never launch.",
+      "reason": "reject: this would skip mandatory feature-level scrutiny and hide unreviewed code risk."
+    }
+  ],
+  "previousRound": null
+}

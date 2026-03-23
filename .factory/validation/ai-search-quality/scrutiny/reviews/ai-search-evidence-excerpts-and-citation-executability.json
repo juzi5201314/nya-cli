@@ -1,28 +1,39 @@
 {
   "featureId": "ai-search-evidence-excerpts-and-citation-executability",
-  "reviewedAt": "2026-03-23T03:29:12Z",
-  "commitId": "89f1f3f",
-  "transcriptSkeletonReviewed": false,
-  "diffReviewed": false,
+  "reviewedAt": "2026-03-23T10:30:04Z",
+  "commitId": "89f1f3fe35d3863af9f814f9e22942727c85d9fc",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "Review subagent did not run because Task launch failed before execution.",
+    "summary": "The feature does fetch full chunk content into prompts, emits excerpt-rich evidence/citation payloads, and adds deterministic tie-breaking plus `get --document-id` coverage, but two grounding-critical gaps remain: untrusted excerpts are injected into prompts without delimiting/escaping, and `citations[].quote` is populated from the 220-char display snippet rather than a verbatim excerpt substring.",
     "issues": [
       {
-        "file": ".factory/missions/6586b515-2320-4b22-9fa5-669b0710e675/model-settings.json",
-        "line": 1,
+        "file": "src/core/search/ai-search.ts",
+        "line": 76,
         "severity": "blocking",
-        "description": "Could not launch scrutiny reviewer for worker session 54bb38b3-4ffe-4118-88ba-db8a99bdfc2f: Task returned \"Invalid model: custom:GPT-5.3-codex\" before any transcript/diff review."
+        "description": "`formatEvidence()` writes raw chunk excerpts straight into both planner and answer prompts, and the callers at lines 156-171 and 204-213 add no explicit untrusted-evidence delimiters or escaping. Because this feature expands evidence from snippets to full chunk text, a chunk containing prompt-injection text can steer retrieval planning or answer synthesis, so the implementation does not reliably satisfy the feature's grounded-answer intent."
+      },
+      {
+        "file": "src/core/search/ai-search.ts",
+        "line": 336,
+        "severity": "blocking",
+        "description": "`citations[].quote` is hard-coded to `item.snippet`, but `makeSnippet()` normalizes whitespace and may prepend/append ellipses (`src/utils/text.ts:90-118`), so the exported quote is not guaranteed to be a verbatim substring of `citations[].excerpt`. That makes the citation payload unsuitable for grounding under VAL-AI-002 even though the shape contains a `quote` field."
       }
     ]
   },
   "sharedStateObservations": [
     {
       "area": "skills",
-      "observation": "Scrutiny workflow lacks an explicit fallback path when reviewer subagent launch fails due invalid model configuration.",
-      "evidence": "Task launch for scrutiny-feature-reviewer repeatedly failed in this session with `Invalid model: custom:GPT-5.3-codex` before review execution."
+      "observation": "The worker handoff marked `skillFeedback.followedProcedure=true`, but the committed code did not implement ai-worker step 3 (`treat evidence as untrusted`, delimit evidence blocks, and escape delimiter-like content).",
+      "evidence": "`.factory/skills/ai-worker/SKILL.md` step 3 requires untrusted-evidence delimiters/escaping, while commit `89f1f3f` still emits plain text evidence in `src/core/search/ai-search.ts:68-79`, `:156-171`, and `:204-213` with no delimiter protocol."
+    },
+    {
+      "area": "conventions",
+      "observation": "The handoff recorded a non-existent full commit SHA, which made the review non-reproducible until the short hash from `git log` was resolved manually.",
+      "evidence": "Handoff file `.../handoffs/2026-03-22T15-27-48-548Z__ai-search-evidence-excerpts-and-citation-executability__54bb38b3-4ffe-4118-88ba-db8a99bdfc2f.json` lists `commitId` `89f1f3fd1b76f8d5f5b3f0b7f6f3f3d7fd5b9c4a`, but `git show` fails for that SHA and `git rev-parse 89f1f3f` resolves the actual reviewed commit to `89f1f3fe35d3863af9f814f9e22942727c85d9fc`."
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "Fail: reviewer subagent failed to launch due model configuration mismatch; feature could not be reviewed."
+  "summary": "Fail: the feature covers excerpt retrieval, output shape, stable ordering, and `get --document-id` execution, but it still exports non-verbatim quote text and feeds full excerpts to the LLM without untrusted-evidence boundaries, so the grounding guarantees are incomplete."
 }
