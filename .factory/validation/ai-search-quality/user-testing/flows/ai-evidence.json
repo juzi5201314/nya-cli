@@ -1,0 +1,101 @@
+{
+  "groupId": "ai-evidence",
+  "testedAt": "2026-03-23T12:01:37Z",
+  "isolation": {
+    "workspaceRoot": "/tmp/nya-cli-user-testing-ai-search-quality/ai-evidence",
+    "missionDir": "/root/.factory/missions/6586b515-2320-4b22-9fa5-669b0710e675",
+    "surface": "CLI"
+  },
+  "toolsUsed": ["bun test", "bun run smoke:google"],
+  "assertions": [
+    {
+      "id": "VAL-AI-001",
+      "title": "Prompts use chunk excerpts (not snippet-only) as evidence",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run `bun test tests/ai-search.test.ts --reporter=junit --reporter-outfile .../ai-search.test.junit.xml` and inspect testcase `includes chunk excerpts in prompts and JSON output`.",
+          "expected": "Prompt-captured tests confirm sentinel content from chunk excerpts appears in planner/answer prompts and output evidence excerpts.",
+          "observed": "JUnit reports testcase passed with no failures; suite failures=0 in `ai-search-quality/ai-evidence/ai-search.test.junit.xml`."
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "ai-search-quality/ai-evidence/ai-search.test.stdout.out",
+          "ai-search-quality/ai-evidence/ai-search.test.junit.xml"
+        ],
+        "stderr": []
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-AI-002",
+      "title": "JSON output includes excerpt/quote suitable for grounding",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inspect passing testcase `includes chunk excerpts in prompts and JSON output` in the same JUnit report.",
+          "expected": "ai-search results include excerpt-rich evidence/citations and verifiable quote/excerpt fields.",
+          "observed": "Case passed; suite confirms assertions for excerpt presence and citation excerpt/quote consistency."
+        }
+      ],
+      "evidence": {
+        "stdout": ["ai-search-quality/ai-evidence/ai-search.test.junit.xml"],
+        "stderr": []
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-AI-003",
+      "title": "Evidence is deduped and deterministically ordered",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inspect passing testcase `orders evidence deterministically and citations can be fetched with get` from `tests/ai-search.test.ts`.",
+          "expected": "Evidence ordering is deterministic and duplicates are removed by chunk identity.",
+          "observed": "JUnit shows this testcase passed with failures=0; test asserts stable evidence order and unique chunk IDs."
+        }
+      ],
+      "evidence": {
+        "stdout": ["ai-search-quality/ai-evidence/ai-search.test.junit.xml"],
+        "stderr": []
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-001",
+      "title": "Citations are executable via get",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inspect the same passing testcase `orders evidence deterministically and citations can be fetched with get` and run milestone smoke `bun run smoke:google`.",
+          "expected": "Cited documentIds can be fetched via `nya get --document-id` and end-to-end CLI flow remains healthy.",
+          "observed": "Testcase passed and smoke output reported `{\"status\":\"passed\"}` with learn→search→ai-search command counts (1/1/1)."
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "ai-search-quality/ai-evidence/ai-search.test.junit.xml",
+          "ai-search-quality/ai-evidence/smoke-google.out"
+        ],
+        "stderr": []
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "`Task(subagent_type=\"user-testing-flow-validator\")` repeatedly exited without assistant events in this worker session.",
+      "resolved": true,
+      "resolution": "Validated assigned assertions directly in the parent validator session with isolated evidence artifacts and command outputs.",
+      "affectedAssertions": [
+        "VAL-AI-001",
+        "VAL-AI-002",
+        "VAL-AI-003",
+        "VAL-CROSS-001"
+      ]
+    }
+  ],
+  "blockers": [],
+  "summary": "Validated 4 assertions for ai-evidence: all passed using deterministic test evidence and CLI smoke output."
+}

@@ -1,0 +1,61 @@
+{
+  "groupId": "ai-config",
+  "testedAt": "2026-03-23T12:01:37Z",
+  "isolation": {
+    "workspaceRoot": "/tmp/nya-cli-user-testing-ai-search-quality/ai-config",
+    "missionDir": "/root/.factory/missions/6586b515-2320-4b22-9fa5-669b0710e675",
+    "surface": "CLI"
+  },
+  "toolsUsed": ["bun test"],
+  "assertions": [
+    {
+      "id": "VAL-AI-030",
+      "title": "Config defaults are honored when flags are absent",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run `bun test tests/ai-search-config.test.ts --reporter=junit --reporter-outfile .../ai-search-config.test.junit.xml` and inspect testcase `uses ai_search config defaults when flags are absent`.",
+          "expected": "ai-search resolution uses ai_search.* config values when CLI flags are omitted.",
+          "observed": "JUnit reports testcase passed with no failures; default-cap assertions succeeded."
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "ai-search-quality/ai-config/ai-search-config.test.stdout.out",
+          "ai-search-quality/ai-config/ai-search-config.test.junit.xml"
+        ],
+        "stderr": []
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-AI-031",
+      "title": "CLI flags override config deterministically",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inspect testcase `CLI flags override ai_search config deterministically` in the same JUnit report.",
+          "expected": "When provided, CLI flags override ai_search config for this run.",
+          "observed": "Case passed; JUnit suite failures=0 confirms deterministic override behavior."
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "ai-search-quality/ai-config/ai-search-config.test.junit.xml"
+        ],
+        "stderr": []
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Flow-validator Task launches did not return assistant output in this validator session.",
+      "resolved": true,
+      "resolution": "Validated config assertions directly and persisted deterministic JUnit evidence.",
+      "affectedAssertions": ["VAL-AI-030", "VAL-AI-031"]
+    }
+  ],
+  "blockers": [],
+  "summary": "Validated 2 config assertions: all passed."
+}

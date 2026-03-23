@@ -1,0 +1,103 @@
+{
+  "groupId": "ai-prompt-safety",
+  "testedAt": "2026-03-23T12:01:37Z",
+  "isolation": {
+    "workspaceRoot": "/tmp/nya-cli-user-testing-ai-search-quality/ai-prompt-safety",
+    "missionDir": "/root/.factory/missions/6586b515-2320-4b22-9fa5-669b0710e675",
+    "surface": "CLI"
+  },
+  "toolsUsed": ["bun test"],
+  "assertions": [
+    {
+      "id": "VAL-AI-010",
+      "title": "Prompt-injection hardening rules are present",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run `bun test tests/safety-redaction.test.ts --test-name-pattern \"ai-search prompts redact secret-bearing queries and evidence\" --reporter=junit --reporter-outfile .../safety-redaction-ai-prompt.test.junit.xml`.",
+          "expected": "Captured planner/answer prompts include untrusted-evidence safety instructions.",
+          "observed": "Targeted testcase passed; JUnit shows failures=0 and assertions validated prompt hardening invariants."
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "ai-search-quality/ai-prompt-safety/safety-redaction-ai-prompt.test.stdout.out",
+          "ai-search-quality/ai-prompt-safety/safety-redaction-ai-prompt.test.junit.xml"
+        ],
+        "stderr": []
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-AI-011",
+      "title": "Evidence blocks are delimiter-wrapped",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inspect the passing targeted safety-redaction testcase and the `uses hardened evidence blocks...` testcase from `tests/ai-search.test.ts` JUnit output.",
+          "expected": "Prompts include explicit BEGIN/END evidence delimiters and metadata blocks.",
+          "observed": "Both referenced cases passed with failures=0 in the JUnit artifacts."
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "ai-search-quality/ai-prompt-safety/safety-redaction-ai-prompt.test.junit.xml",
+          "ai-search-quality/ai-evidence/ai-search.test.junit.xml"
+        ],
+        "stderr": []
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-AI-014",
+      "title": "Prompts redact secrets",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inspect targeted safety-redaction testcase `ai-search prompts redact secret-bearing queries and evidence`.",
+          "expected": "Raw secret values are absent from planner/answer prompts while redacted placeholders remain.",
+          "observed": "Testcase passed; JUnit reports zero failures for the redaction-specific prompt assertions."
+        }
+      ],
+      "evidence": {
+        "stdout": [
+          "ai-search-quality/ai-prompt-safety/safety-redaction-ai-prompt.test.junit.xml"
+        ],
+        "stderr": []
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-AI-015",
+      "title": "Delimiter-injection inside evidence is neutralized",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inspect passing testcase `uses hardened evidence blocks in every planner and answer prompt that includes evidence` from `tests/ai-search.test.ts`.",
+          "expected": "Delimiter-like tokens embedded in evidence are escaped so wrapper boundaries remain intact.",
+          "observed": "Case passed in JUnit output with no failures and explicit delimiter-escaping assertions satisfied."
+        }
+      ],
+      "evidence": {
+        "stdout": ["ai-search-quality/ai-evidence/ai-search.test.junit.xml"],
+        "stderr": []
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Flow-validator Task launches did not return assistant events in this session.",
+      "resolved": true,
+      "resolution": "Executed prompt-safety validation directly via deterministic test flows and persisted evidence artifacts.",
+      "affectedAssertions": [
+        "VAL-AI-010",
+        "VAL-AI-011",
+        "VAL-AI-014",
+        "VAL-AI-015"
+      ]
+    }
+  ],
+  "blockers": [],
+  "summary": "Validated 4 prompt-safety assertions: all passed with captured prompt-hardening/redaction tests."
+}

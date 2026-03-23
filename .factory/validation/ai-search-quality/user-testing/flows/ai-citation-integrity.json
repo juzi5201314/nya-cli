@@ -1,0 +1,73 @@
+{
+  "groupId": "ai-citation-integrity",
+  "testedAt": "2026-03-23T12:01:37Z",
+  "isolation": {
+    "workspaceRoot": "/tmp/nya-cli-user-testing-ai-search-quality/ai-citation-integrity",
+    "missionDir": "/root/.factory/missions/6586b515-2320-4b22-9fa5-669b0710e675",
+    "surface": "CLI"
+  },
+  "toolsUsed": ["bun test"],
+  "assertions": [
+    {
+      "id": "VAL-AI-020",
+      "title": "Citations are validated and repaired once if invalid",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run `bun test tests/ai-search.test.ts --reporter=junit --reporter-outfile .../ai-search.test.junit.xml` and inspect testcase `repairs invalid citation ids once and falls back to excerpt-only citations when quotes are not verifiable`.",
+          "expected": "Invalid citation ids trigger one repair attempt and final citations map to real evidence ids.",
+          "observed": "Case passed with no failures; JUnit suite failures=0 and assertions validate one-repair citation integrity path."
+        }
+      ],
+      "evidence": {
+        "stdout": ["ai-search-quality/ai-evidence/ai-search.test.junit.xml"],
+        "stderr": []
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-AI-021",
+      "title": "Citation quotes are verifiable substrings of evidence",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inspect the same passing citation-repair testcase in `tests/ai-search.test.ts`.",
+          "expected": "Fabricated/non-verbatim quotes are repaired or dropped; returned citations stay groundable.",
+          "observed": "Case passed and asserts quote removal with excerpt fallback when quote is not verifiable."
+        }
+      ],
+      "evidence": {
+        "stdout": ["ai-search-quality/ai-evidence/ai-search.test.junit.xml"],
+        "stderr": []
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-AI-023",
+      "title": "Insufficient evidence behavior is explicit",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inspect testcase `returns insufficient evidence status when retrieval finds nothing` in `tests/ai-search.test.ts` JUnit report.",
+          "expected": "When retrieval is empty, grounding status is insufficient, citations are empty, and answer explicitly indicates lack of evidence.",
+          "observed": "Case passed with failures=0 and asserts `groundingStatus=insufficient_evidence`, `citations=[]`, and explicit insufficient-evidence answer text."
+        }
+      ],
+      "evidence": {
+        "stdout": ["ai-search-quality/ai-evidence/ai-search.test.junit.xml"],
+        "stderr": []
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Task subagents were unavailable in-session (no assistant events captured).",
+      "resolved": true,
+      "resolution": "Ran citation-integrity validation directly with deterministic test evidence under isolated workspace paths.",
+      "affectedAssertions": ["VAL-AI-020", "VAL-AI-021", "VAL-AI-023"]
+    }
+  ],
+  "blockers": [],
+  "summary": "Validated 3 citation-integrity assertions: all passed."
+}

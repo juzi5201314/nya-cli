@@ -1,0 +1,30 @@
+{
+  "milestone": "ai-search-quality",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 13,
+    "passed": 13,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-AI-001",
+    "VAL-AI-002",
+    "VAL-AI-003",
+    "VAL-AI-010",
+    "VAL-AI-011",
+    "VAL-AI-014",
+    "VAL-AI-015",
+    "VAL-AI-020",
+    "VAL-AI-021",
+    "VAL-AI-023",
+    "VAL-AI-030",
+    "VAL-AI-031",
+    "VAL-CROSS-001"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}
