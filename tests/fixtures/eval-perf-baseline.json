@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "fixture": {
+    "name": "offline-eval-perf",
+    "sourceFiles": 4,
+    "searchQuery": "hybrid retrieval evidence",
+    "aiSearchQuery": "What keeps the offline eval fixture grounded?"
+  },
+  "metrics": {
+    "dataset": {
+      "documentsIndexed": 4,
+      "chunksIndexed": 6,
+      "skippedSymlinks": 0
+    },
+    "search": {
+      "limit": 3,
+      "results": 3,
+      "retrieversUsed": ["vector", "fts", "metadata"],
+      "vectorCandidates": 6,
+      "ftsCandidates": 6,
+      "lexicalCandidates": 0,
+      "metadataCandidates": 5
+    },
+    "aiSearch": {
+      "limit": 3,
+      "maxSteps": 1,
+      "maxQueriesPerStep": 1,
+      "maxEvidenceChunks": 3,
+      "iterations": 1,
+      "usedQueries": 1,
+      "evidence": 3,
+      "citations": 1,
+      "groundingStatus": "grounded",
+      "structuredOutputFallbackUsed": false
+    },
+    "llm": {
+      "plannerCalls": 1,
+      "answerCalls": 1,
+      "totalCalls": 2
+    }
+  },
+  "telemetry": {
+    "timingsMs": {
+      "fixtureSetup": 31,
+      "learnGit": 103,
+      "search": 8,
+      "aiSearch": 4,
+      "total": 219
+    }
+  }
+}

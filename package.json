@@ -8,6 +8,8 @@
     "dev": "bun run src/index.ts",
     "build": "bun build src/index.ts --target bun --outfile dist/nya --external react-devtools-core && bun run scripts/copy-tree-sitter-assets.ts",
     "smoke:google": "bun run scripts/smoke-google.ts",
+    "eval:perf": "bun run scripts/eval-perf.ts",
+    "eval:perf:check": "bun run scripts/eval-perf-check.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "check": "bun run typecheck && biome check ."
