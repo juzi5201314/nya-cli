@@ -1,0 +1,26 @@
+{
+  "featureId": "fix-validation-droid-model-portability-and-fallback-guidance",
+  "reviewedAt": "2026-03-23T11:44:38Z",
+  "commitId": "429448b5a304f4a39b37ddf7f0f6787ec6916bd2",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "I reviewed the prior failed reviews, the feature entry, the fix handoff, the fix transcript skeleton, the `ops-worker` skill, the mission AGENTS update, and commit `429448b5a304f4a39b37ddf7f0f6787ec6916bd2`, including committed droid file contents via `git show`. The fix adequately addresses the original portability blocker: the reviewed commit restores both repo-scoped validation droids to `model: inherit`, the mission AGENTS now documents `validationWorkerModel` selection/fallback plus temporary pin-and-restore guidance for `Invalid model`/`402` cases, and the worker recorded successful `launch-ok` Task probes for both validation droids after applying that strategy. Per the rerun instruction, I evaluated committed evidence rather than the validator's transient local working-tree override, so I did not treat that runtime-only pin as a regression.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The `ops-worker` skill does not mention repo-scoped validation droid portability or mission-level `validationWorkerModel` fallback/probe work, so this worker had to infer that procedure from the failed-review context instead of the skill itself.",
+      "evidence": "`/root/projects/nya2/.factory/skills/ops-worker/SKILL.md` only covers `VAL-OPS-*` scripts/build/smoke tasks, while the transcript skeleton for session `d798dbf1-bd92-4208-87a1-12ac989d2b4a` and the handoff show edits to `.factory/droids/scrutiny-feature-reviewer.md`, `.factory/droids/user-testing-flow-validator.md`, `/root/.factory/missions/6586b515-2320-4b22-9fa5-669b0710e675/AGENTS.md`, and Task probes for both validation droids."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The new validation-droid portability guidance lives only in this mission's `AGENTS.md`; the shared project environment notes still do not mention `validationWorkerModel`, Task-portable model selection, or the temporary pin-and-restore fallback, so future missions could repeat the same model-id discovery work.",
+      "evidence": "Mission file `/root/.factory/missions/6586b515-2320-4b22-9fa5-669b0710e675/AGENTS.md:24-37` now documents the portability/fallback flow, but `/root/projects/nya2/.factory/library/environment.md` only lists tools, API keys, and secret-handling rules and contains no Task/model-portability guidance."
+    }
+  ],
+  "addressesFailureFrom": ".factory/validation/ai-search-quality/scrutiny/reviews/fix-scrutiny-reviewer-subagent-model-id.json",
+  "summary": "Pass: commit `429448b5a304f4a39b37ddf7f0f6787ec6916bd2` restores both repo-scoped validation droids to `model: inherit`, the mission AGENTS now documents the fallback strategy for `validationWorkerModel` and temporary pin/restore handling, and the recorded Task probes show both validation droids launched successfully. The transient local validator override mentioned in the rerun instructions is outside the reviewed commit and not a regression."
+}
