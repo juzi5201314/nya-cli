@@ -1,0 +1,66 @@
+{
+  "milestone": "ai-search-quality",
+  "round": 3,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "bun test",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "bun run typecheck",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "bunx biome check .",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 3,
+    "passed": 2,
+    "failed": 1,
+    "failedFeatures": ["fix-scrutiny-reviewer-subagent-model-id"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "fix-scrutiny-reviewer-subagent-model-id",
+      "severity": "blocking",
+      "description": "The round-2 blocker on reviewer-model portability remains unresolved: validation droids still pin `custom:GPT-5.4-mini-[cch]-2`, and no new fix feature in this rerun addresses that portability gap.",
+      "suggestedFix": "Add a follow-up fix feature that switches scrutiny/user-testing droids to Task-portable model IDs (or a deterministic fallback chain) and rerun scrutiny afterward."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add a mission-level rule that project validation droids must use Task-portable model IDs, and if custom IDs are required, document an explicit fallback strategy.",
+      "evidence": "Round-2 failed this feature for portability, and this round still has no fix that removes the `custom:*` dependency.",
+      "isSystemic": true
+    },
+    {
+      "target": "ops-worker skill",
+      "suggestion": "Add explicit instructions for repo-scoped droid/model override tasks, including how to select portable model IDs and validate launches without relying on personal settings.",
+      "evidence": "The only remaining blocker in ai-search-quality is still model-id portability for validation droids.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "ai-worker strict test-first wording may be too rigid for small fixups.",
+      "reason": "duplicate: this was already captured in the previous synthesis and no new blocker emerged from the latest fix reviews."
+    },
+    {
+      "observation": "Record ops-worker model-override guidance gap from fix-scrutiny review as a new item.",
+      "reason": "duplicate: already captured as a guidance update in the previous synthesis; carried forward rather than duplicated."
+    },
+    {
+      "observation": "Record missing AGENTS guidance for validation droid model portability as a new item.",
+      "reason": "duplicate: already captured in the previous synthesis and reaffirmed by the unresolved blocker."
+    }
+  ],
+  "previousRound": "/root/projects/nya2/.factory/validation/ai-search-quality/scrutiny/synthesis.round2.json"
+}
