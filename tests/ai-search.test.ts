@@ -646,6 +646,10 @@ describe('ai-search', () => {
       join(repoDir, 'README.md'),
       '# Search\n\nGemini and Tavily are used to help agents search knowledge.\n'
     );
+    await writeFile(
+      join(repoDir, 'GUIDE.md'),
+      '# Guide\n\nAgents also use Tavily and Gemini to search project documentation.\n'
+    );
 
     await runGit(repoDir, ['init']);
     await runGit(repoDir, ['config', 'user.email', 'test@example.com']);
@@ -677,37 +681,50 @@ describe('ai-search', () => {
       rebuildReason: null,
     });
 
-    const result = await aiSearchIndex({
-      db,
-      embeddingProvider,
-      llmProvider: new ScriptedLlmProvider(
-        [
-          {
-            enough: false,
-            rationale: 'Need a focused search query.',
-            queries: ['Gemini Tavily agents'],
-          },
-        ],
-        [
-          {
-            answer: 'The repository discusses search tooling.',
-            citations: [1],
-          },
-        ]
-      ),
-      query: 'Gemini Tavily agents',
-      limit: 5,
-      scope: 'project',
-      databasePath: join(dbDir, 'index.sqlite'),
-      maxSteps: 1,
-      maxQueriesPerStep: 1,
-      maxEvidenceChunks: 5,
-    });
+    for (const expectedEvidenceIds of [[1], [1, 2]]) {
+      const result = await aiSearchIndex({
+        db,
+        embeddingProvider,
+        llmProvider: new ScriptedLlmProvider(
+          [
+            {
+              enough: false,
+              rationale: 'Need a focused search query.',
+              queries: ['Gemini Tavily agents'],
+            },
+          ],
+          [
+            {
+              answer: 'The repository discusses search tooling.',
+              citations: expectedEvidenceIds,
+            },
+          ]
+        ),
+        query: 'Gemini Tavily agents',
+        limit: 5,
+        scope: 'project',
+        databasePath: join(dbDir, 'index.sqlite'),
+        maxSteps: 1,
+        maxQueriesPerStep: 1,
+        maxEvidenceChunks: 5,
+      });
 
-    expect(result.groundingStatus).toBe('grounded');
-    expect(result.citations).toHaveLength(1);
-    expect(result.citations[0]?.documentId).toBeGreaterThan(0);
-    expect(result.citations[0]?.excerpt).toContain('Gemini');
+      expect(result.evidence.length).toBeGreaterThanOrEqual(
+        expectedEvidenceIds.length
+      );
+      expect(result.groundingStatus).toBe('grounded');
+      expect(result.citations.map((citation) => citation.evidenceId)).toEqual(
+        expectedEvidenceIds
+      );
+      expect(
+        result.citations.every((citation) => citation.documentId > 0)
+      ).toBe(true);
+      expect(
+        result.citations.every((citation) =>
+          citation.excerpt.includes('Gemini')
+        )
+      ).toBe(true);
+    }
 
     closeDatabase(db);
   });

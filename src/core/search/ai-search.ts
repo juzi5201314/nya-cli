@@ -30,6 +30,8 @@ type CitationCandidate = {
   quote?: string | undefined;
 };
 
+type CitationCandidateInput = number | string | CitationCandidate;
+
 type EvidenceRecord = SearchResult & {
   evidenceId: number;
   excerpt: string;
@@ -91,19 +93,39 @@ const plannerSchema = z.object({
   queries: z.array(z.string()).default([]),
 });
 
-const citationSchema = z.union([
-  z.coerce.number().int().positive(),
+const citationSchema = z.preprocess(
+  (value) => {
+    if (typeof value === 'number' || typeof value === 'string') {
+      return {
+        evidenceId: value,
+      };
+    }
+
+    return value;
+  },
   z.object({
     evidenceId: z.coerce.number().int().positive(),
     quote: z.string().optional(),
-  }),
-]);
+  })
+);
 
 const answerSchema = z.object({
   answer: z.string(),
   citations: z.array(citationSchema).default([]),
   citationIds: z.array(z.coerce.number().int().positive()).default([]),
 });
+
+function normalizeCitationCandidate(
+  value: CitationCandidateInput
+): CitationCandidate {
+  if (typeof value === 'number' || typeof value === 'string') {
+    return {
+      evidenceId: Number(value),
+    };
+  }
+
+  return value;
+}
 
 function sanitizePromptText(value: string): string {
   return neutralizeDelimiterTokens(redactText(value));
@@ -250,32 +272,31 @@ function buildVerbatimQuote(
   return normalized.slice(start, end);
 }
 
-function extractAnswerCitations(
-  result: z.infer<typeof answerSchema>
-): CitationCandidate[] {
+function extractAnswerCitations(result: {
+  citations?: CitationCandidateInput[];
+  citationIds?: Array<number | string>;
+}): CitationCandidate[] {
+  const citationsInput = result.citations ?? [];
   const citations =
-    (result.citations?.length ?? 0) > 0
-      ? result.citations
+    citationsInput.length > 0
+      ? citationsInput.map((citation) => normalizeCitationCandidate(citation))
       : (result.citationIds ?? []).map<CitationCandidate>((evidenceId) => ({
-          evidenceId,
+          evidenceId: Number(evidenceId),
         }));
 
   const seen = new Set<number>();
   const unique: CitationCandidate[] = [];
 
   for (const citation of citations) {
-    const normalizedCitation: CitationCandidate =
-      typeof citation === 'number' ? { evidenceId: citation } : citation;
-
-    if (seen.has(normalizedCitation.evidenceId)) {
+    if (seen.has(citation.evidenceId)) {
       continue;
     }
-    seen.add(normalizedCitation.evidenceId);
+    seen.add(citation.evidenceId);
     const candidate: CitationCandidate = {
-      evidenceId: normalizedCitation.evidenceId,
+      evidenceId: citation.evidenceId,
     };
-    if (normalizedCitation.quote !== undefined) {
-      candidate.quote = normalizedCitation.quote;
+    if (citation.quote !== undefined) {
+      candidate.quote = citation.quote;
     }
     unique.push(candidate);
   }
