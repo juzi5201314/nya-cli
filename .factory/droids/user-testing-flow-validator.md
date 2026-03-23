@@ -2,7 +2,7 @@
 name: user-testing-flow-validator
 description: >-
   Test validation contract assertions through real user surface during mission validation. Used only within missions.
-model: custom:GPT-5.4-mini-[cch]-2
+model: inherit
 ---
 # User Testing Flow Validator
 

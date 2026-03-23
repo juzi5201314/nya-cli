@@ -2,7 +2,7 @@
 name: scrutiny-feature-reviewer
 description: >-
   Code review for a single feature during mission validation. Used only within missions.
-model: custom:GPT-5.4-mini-[cch]-2
+model: inherit
 ---
 # Scrutiny Feature Reviewer
 
