@@ -1,0 +1,15 @@
+{
+  "featureId": "fix-ai-search-evidence-prompt-hardening-and-verbatim-quotes",
+  "reviewedAt": "2026-03-23T11:04:23Z",
+  "commitId": "e802657a6111d6298a342201590f00373e833198",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "I reviewed the prior failed review, the fix handoff, the fix transcript skeleton, the ai-worker skill, and both commits (`89f1f3fe35d3863af9f814f9e22942727c85d9fc` and `e802657a6111d6298a342201590f00373e833198`). The fix closes the original grounding gaps: planner and answer prompts now build evidence sections exclusively through the delimiter-wrapped hardened formatter, delimiter-like tokens inside metadata/content are neutralized before prompt injection, and citation validation now preserves grounded citations by omitting unverifiable `quote` text while still returning the referenced excerpt. The updated ai-search regressions specifically assert hardened evidence blocks across every evidence-bearing planner/answer prompt and verify excerpt-only citation fallback, so I did not find a remaining scoped correctness issue.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": ".factory/validation/ai-search-quality/scrutiny/reviews/ai-search-evidence-excerpts-and-citation-executability.json",
+  "summary": "Pass: commit `e802657` adequately fixes the prior ai-search evidence hardening and quote-grounding failures by routing prompt evidence through the hardened wrapper, escaping delimiter-like evidence content, and falling back to excerpt-only citations when a verbatim quote cannot be verified."
+}

@@ -1,0 +1,21 @@
+{
+  "featureId": "fix-ai-search-accept-numeric-citations-array-before-validation",
+  "reviewedAt": "2026-03-23T11:03:39Z",
+  "commitId": "5a02a13",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "I reviewed the fix handoff, the fix transcript skeleton, the prior failed review, and both commits (`b942a2c` and `5a02a13`). The fix correctly closes the prior blocking gap: `answerSchema` now normalizes numeric/string `citations` entries before validation, `extractAnswerCitations` accepts the compact array form on the normal validation/repair path, and the ai-search regression test now covers both `citations: [1]` and `citations: [1, 2]`. I did not find a remaining correctness issue in the scoped fix.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The `ai-worker` skill's strict 'write tests first' step may be too rigid for fixups against an already-landed partial regression. This worker reasonably inspected the existing ai-search implementation and in-tree regression before tightening both the normalization logic and coverage.",
+      "evidence": "`/root/.factory/missions/6586b515-2320-4b22-9fa5-669b0710e675/handoffs/2026-03-23T10-57-13-037Z__fix-ai-search-accept-numeric-citations-array-before-validation__0aac87b9-8ad4-4f2e-9254-0f5b051ae4a1.json` records `skillFeedback.followedProcedure=false` with the noted deviation, and the fix transcript skeleton shows the worker read `tests/ai-search.test.ts` and `src/core/search/ai-search.ts` before patching the existing regression. `ai-worker/SKILL.md` currently says to 'Write tests first with fake LLM providers' without this exception."
+    }
+  ],
+  "addressesFailureFrom": ".factory/validation/ai-search-quality/scrutiny/reviews/ai-search-citation-integrity-and-insufficient-evidence.json",
+  "summary": "Pass: commit `5a02a13` adequately fixes the prior citation-schema failure by normalizing compact numeric citation arrays before validation and adds regression coverage for both one-item and two-item numeric `citations` arrays."
+}

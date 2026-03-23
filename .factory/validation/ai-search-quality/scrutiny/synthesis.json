@@ -1,6 +1,6 @@
 {
   "milestone": "ai-search-quality",
-  "round": 2,
+  "round": 3,
   "status": "fail",
   "validatorsRun": {
     "test": {
@@ -20,77 +20,47 @@
     }
   },
   "reviewsSummary": {
-    "total": 5,
+    "total": 3,
     "passed": 2,
-    "failed": 3,
-    "failedFeatures": [
-      "ai-search-evidence-excerpts-and-citation-executability",
-      "ai-search-citation-integrity-and-insufficient-evidence",
-      "fix-scrutiny-reviewer-subagent-model-id"
-    ]
+    "failed": 1,
+    "failedFeatures": ["fix-scrutiny-reviewer-subagent-model-id"]
   },
   "blockingIssues": [
     {
-      "featureId": "ai-search-evidence-excerpts-and-citation-executability",
-      "severity": "blocking",
-      "description": "Full chunk excerpts are inserted into planner/answer prompts without untrusted-evidence delimiters or delimiter escaping, so indexed prompt-injection text can still steer ai-search behavior.",
-      "suggestedFix": "Route all planner/answer evidence through the hardened delimiter-wrapped formatter and escape delimiter-like tokens before interpolation."
-    },
-    {
-      "featureId": "ai-search-evidence-excerpts-and-citation-executability",
-      "severity": "blocking",
-      "description": "`citations[].quote` is emitted from the display snippet rather than a verified excerpt substring, so exported quotes are not reliably groundable/verbatim.",
-      "suggestedFix": "Populate quote from a validated verbatim excerpt slice (or drop quote and rely on excerpt/offset fields) so citations remain executable and auditable."
-    },
-    {
-      "featureId": "ai-search-citation-integrity-and-insufficient-evidence",
-      "severity": "blocking",
-      "description": "The answer schema rejects numeric citation entries (e.g. `citations: [1]`) before normalization/repair runs, so valid model outputs can fail citation validation.",
-      "suggestedFix": "Accept numeric citation entries in schema parsing and normalize them to evidenceId objects before repair/validation."
-    },
-    {
       "featureId": "fix-scrutiny-reviewer-subagent-model-id",
       "severity": "blocking",
-      "description": "Repo-scoped validation droids still pin `custom:GPT-5.4-mini-[cch]-2`, which depends on personal local model configuration and does not robustly remove model-id portability failures.",
-      "suggestedFix": "Switch validation droids to Task-portable model IDs (or add a deterministic fallback strategy) and verify reviewer launches in an environment without personal custom-model mappings."
+      "description": "The round-2 blocker on reviewer-model portability remains unresolved: validation droids still pin `custom:GPT-5.4-mini-[cch]-2`, and no new fix feature in this rerun addresses that portability gap.",
+      "suggestedFix": "Add a follow-up fix feature that switches scrutiny/user-testing droids to Task-portable model IDs (or a deterministic fallback chain) and rerun scrutiny afterward."
     }
   ],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "Add a mission-level rule that project validation droids must use Task-portable model IDs; avoid environment-specific `custom:*` IDs unless setup + fallback are explicitly codified.",
-      "evidence": "Round-1 scrutiny was blocked by invalid custom model IDs; round-2 fix still used a personal custom model ID and failed portability review.",
+      "suggestion": "Add a mission-level rule that project validation droids must use Task-portable model IDs, and if custom IDs are required, document an explicit fallback strategy.",
+      "evidence": "Round-2 failed this feature for portability, and this round still has no fix that removes the `custom:*` dependency.",
       "isSystemic": true
-    },
-    {
-      "target": "EndFeatureRun handoff procedure",
-      "suggestion": "Require verified commit traceability in handoffs (existing SHA check plus optional commit list per worker session) so reviewers can deterministically replay feature diffs.",
-      "evidence": "One ai-search handoff contained a non-existent full SHA, and another recorded only a follow-up commit while omitting the earlier implementation commit from the same session.",
-      "isSystemic": true
-    },
-    {
-      "target": "ai-worker skill",
-      "suggestion": "Refine strict test-first wording to allow tiny pre-test wiring extraction when necessary, while still requiring immediate regression tests before finalization.",
-      "evidence": "The ai-search config feature passed review but logged a justified skill deviation because strict test-first was impractical for an initial CLI/config wiring split.",
-      "isSystemic": false
     },
     {
       "target": "ops-worker skill",
-      "suggestion": "Add explicit instructions for repo-scoped droid/model override tasks, including how to choose portable model IDs and validate Task launches in a clean environment.",
-      "evidence": "The scrutiny model-id fix required ad-hoc probing of personal settings and still landed on an environment-specific custom model ID.",
+      "suggestion": "Add explicit instructions for repo-scoped droid/model override tasks, including how to select portable model IDs and validate launches without relying on personal settings.",
+      "evidence": "The only remaining blocker in ai-search-quality is still model-id portability for validation droids.",
       "isSystemic": true
     }
   ],
   "rejectedObservations": [
     {
-      "observation": "Document ai-search prompt-hardening invariants in .factory/library immediately.",
-      "reason": "rejected: useful but non-blocking for this scrutiny gate; invariants are already enforced by source + tests and can be documented in a separate follow-up."
+      "observation": "ai-worker strict test-first wording may be too rigid for small fixups.",
+      "reason": "duplicate: this was already captured in the previous synthesis and no new blocker emerged from the latest fix reviews."
     },
     {
-      "observation": "Treat one worker's `followedProcedure=true` mismatch as a standalone blocker.",
-      "reason": "rejected: captured as a process-quality signal, but insufficient evidence for an additional blocking issue independent of the concrete code defects already reported."
+      "observation": "Record ops-worker model-override guidance gap from fix-scrutiny review as a new item.",
+      "reason": "duplicate: already captured as a guidance update in the previous synthesis; carried forward rather than duplicated."
+    },
+    {
+      "observation": "Record missing AGENTS guidance for validation droid model portability as a new item.",
+      "reason": "duplicate: already captured in the previous synthesis and reaffirmed by the unresolved blocker."
     }
   ],
-  "previousRound": "/root/projects/nya2/.factory/validation/ai-search-quality/scrutiny/synthesis.round1.json"
+  "previousRound": "/root/projects/nya2/.factory/validation/ai-search-quality/scrutiny/synthesis.round2.json"
 }
