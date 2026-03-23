@@ -390,6 +390,64 @@ async function runGetByDocumentId(
   return { exitCode, stdout, stderr };
 }
 
+function extractEvidenceBodies(prompt: string): string[] {
+  const begin = '<<<BEGIN_UNTRUSTED_EVIDENCE>>>';
+  const end = '<<<END_UNTRUSTED_EVIDENCE>>>';
+  const bodies: string[] = [];
+  let cursor = 0;
+
+  while (cursor < prompt.length) {
+    const beginIndex = prompt.indexOf(begin, cursor);
+    if (beginIndex < 0) {
+      break;
+    }
+
+    const contentStart = beginIndex + begin.length;
+    const endIndex = prompt.indexOf(end, contentStart);
+    if (endIndex < 0) {
+      break;
+    }
+
+    bodies.push(prompt.slice(contentStart, endIndex));
+    cursor = endIndex + end.length;
+  }
+
+  return bodies;
+}
+
+function stripEvidenceBlocks(prompt: string): string {
+  return prompt.replace(
+    /<<<BEGIN_UNTRUSTED_EVIDENCE>>>[\s\S]*?<<<END_UNTRUSTED_EVIDENCE>>>/g,
+    ''
+  );
+}
+
+function expectPromptEvidenceToBeHardened(
+  prompt: string,
+  sentinel: string
+): void {
+  expect(prompt).toContain('<<<BEGIN_UNTRUSTED_EVIDENCE>>>');
+  expect(prompt).toContain('<<<END_UNTRUSTED_EVIDENCE>>>');
+
+  const bodies = extractEvidenceBodies(prompt);
+  expect(bodies.length).toBeGreaterThan(0);
+  expect(bodies.some((body) => body.includes(`metadata: {`))).toBe(true);
+  expect(
+    bodies.some((body) => body.includes('BEGIN_UNTRUSTED_EVID\u200bENCE'))
+  ).toBe(true);
+  expect(
+    bodies.some((body) => body.includes('END_UNTRUSTED_EVID\u200bENCE'))
+  ).toBe(true);
+  expect(bodies.some((body) => body.includes('BEGIN_UNTRUSTED_EVIDENCE'))).toBe(
+    false
+  );
+  expect(bodies.some((body) => body.includes('END_UNTRUSTED_EVIDENCE'))).toBe(
+    false
+  );
+  expect(bodies.some((body) => body.includes(sentinel))).toBe(true);
+  expect(stripEvidenceBlocks(prompt)).not.toContain(sentinel);
+}
+
 class FallbackLlmProvider implements LlmProvider {
   readonly id = 'google' as const;
   readonly model = 'fake-llm';
@@ -752,7 +810,115 @@ describe('ai-search', () => {
     closeDatabase(db);
   });
 
-  test('repairs invalid citation ids once and drops fabricated quotes', async () => {
+  test('uses hardened evidence blocks in every planner and answer prompt that includes evidence', async () => {
+    const repoDir = join(tempRoot, 'repo-hardened-prompts');
+    const dbDir = join(tempRoot, 'db-hardened-prompts');
+    await mkdir(repoDir, { recursive: true });
+
+    const delimiterSentinel =
+      'BEGIN_UNTRUSTED_EVIDENCE and END_UNTRUSTED_EVIDENCE must stay escaped';
+    const excerptSentinel = 'PROMPT_HARDENING_SENTINEL';
+
+    await writeFile(
+      join(repoDir, 'README.md'),
+      [
+        '# Search',
+        '',
+        'Gemini and Tavily help agents search the knowledge base.',
+        delimiterSentinel,
+        excerptSentinel,
+      ].join('\n')
+    );
+
+    await runGit(repoDir, ['init']);
+    await runGit(repoDir, ['config', 'user.email', 'test@example.com']);
+    await runGit(repoDir, ['config', 'user.name', 'Test User']);
+    await runGit(repoDir, ['add', '.']);
+    await runGit(repoDir, ['commit', '-m', 'initial']);
+
+    const db = await openDatabase(join(dbDir, 'index.sqlite'));
+    const embeddingProvider = new FakeEmbeddingProvider();
+    initializeEmptyIndex(
+      db,
+      embeddingProvider.fingerprint(config.index.chunking_version)
+    );
+
+    await learnGitSource({
+      source: repoDir,
+      config,
+      db,
+      scope: 'project',
+      scopePaths: {
+        scope: 'project',
+        projectDirName: '.nya-cli',
+        databasePath: join(dbDir, 'index.sqlite'),
+        databaseDir: dbDir,
+        remoteCacheDir: join(tempRoot, 'cache-hardened-prompts'),
+      },
+      embeddingProvider,
+      rebuildTriggered: false,
+      rebuildReason: null,
+    });
+
+    const llmProvider = new ScriptedLlmProvider(
+      [
+        {
+          enough: false,
+          rationale: 'Need to retrieve evidence first.',
+          queries: ['Gemini Tavily agents'],
+        },
+        {
+          enough: true,
+          rationale: 'Retrieved evidence is sufficient.',
+          queries: [],
+        },
+      ],
+      [
+        {
+          answer: 'The repository discusses search tooling.',
+          citations: [{ evidenceId: 999, quote: 'fabricated quote' }],
+        },
+        {
+          answer: 'The repository discusses search tooling.',
+          citations: [{ evidenceId: 1 }],
+        },
+      ]
+    );
+
+    const result = await aiSearchIndex({
+      db,
+      embeddingProvider,
+      llmProvider,
+      query: 'Gemini Tavily agents',
+      limit: 5,
+      scope: 'project',
+      databasePath: join(dbDir, 'index.sqlite'),
+      maxSteps: 2,
+      maxQueriesPerStep: 1,
+      maxEvidenceChunks: 5,
+    });
+
+    expect(result.groundingStatus).toBe('grounded');
+    expect(llmProvider.plannerPrompts).toHaveLength(2);
+    expect(llmProvider.answerPrompts).toHaveLength(2);
+
+    const hardenedPrompts = [
+      llmProvider.plannerPrompts[1],
+      llmProvider.answerPrompts[0],
+      llmProvider.answerPrompts[1],
+    ];
+
+    for (const prompt of hardenedPrompts) {
+      if (!prompt) {
+        throw new Error('expected captured hardened prompt');
+      }
+      expectPromptEvidenceToBeHardened(prompt, excerptSentinel);
+    }
+
+    closeDatabase(db);
+  });
+
+  test('repairs invalid citation ids once and falls back to excerpt-only citations when quotes are not verifiable', async () => {
     const repoDir = join(tempRoot, 'repo-repair');
     const dbDir = join(tempRoot, 'db-repair');
     await mkdir(repoDir, { recursive: true });
@@ -836,9 +1002,11 @@ describe('ai-search', () => {
     });
 
     expect(llmProvider.answerPrompts).toHaveLength(2);
-    expect(result.groundingStatus).toBe('citation_validation_failed');
-    expect(result.citations).toHaveLength(0);
-    expect(result.answer).toContain('未能验证');
+    expect(result.groundingStatus).toBe('grounded');
+    expect(result.citations).toHaveLength(1);
+    expect(result.citations[0]?.evidenceId).toBe(1);
+    expect(result.citations[0]?.quote).toBeUndefined();
+    expect(result.citations[0]?.excerpt).toContain('Gemini');
 
     closeDatabase(db);
   });
