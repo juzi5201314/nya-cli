@@ -1,0 +1,74 @@
+{
+  "groupId": "cli-ops-rerun",
+  "testedAt": "2026-03-24T17:40:49.879611+00:00",
+  "isolation": {
+    "surface": "CLI",
+    "network": "offline; loopback embedding stub only",
+    "tempRoot": "/tmp/nya2-val-ops-031-3knq1jnb",
+    "fixtureRepo": "/tmp/nya2-val-ops-031-3knq1jnb/fixture-repo",
+    "isolatedCwd": "/tmp/nya2-val-ops-031-3knq1jnb/isolated-cwd",
+    "copiedDist": "/tmp/nya2-val-ops-031-3knq1jnb/runtime-package/dist/nya",
+    "configPath": "/tmp/nya2-val-ops-031-3knq1jnb/offline-openai.toml",
+    "databasePath": "/tmp/nya2-val-ops-031-3knq1jnb/isolated-cwd/.nya-cli/index.sqlite"
+  },
+  "toolsUsed": [
+    "shell",
+    "bun",
+    "git",
+    "python3"
+  ],
+  "assertions": [
+    {
+      "id": "VAL-OPS-031",
+      "title": "build includes required runtime assets",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run `bun run build` in `/root/projects/nya2`.",
+          "expected": "Build succeeds offline and refreshes the dist artifact.",
+          "observed": "Exit 0. `dist/nya` rebuilt successfully; build stdout reported `Bundled 309 modules in 774ms`."
+        },
+        {
+          "action": "Inspect a copied dist package located only under the fresh `/tmp` workspace.",
+          "expected": "Required runtime assets are bundled with the copied dist package.",
+          "observed": "Observed `/tmp/nya2-val-ops-031-3knq1jnb/runtime-package/dist/tree-sitter/web-tree-sitter.wasm`, `/tmp/nya2-val-ops-031-3knq1jnb/runtime-package/dist/tree-sitter/tree-sitter-typescript.wasm`, plus the full tree-sitter grammar set and `/tmp/nya2-val-ops-031-3knq1jnb/runtime-package/dist/sqlite-vec/sqlite-vec-linux-x64/vec0.so`."
+        },
+        {
+          "action": "Create a fresh local Git repo containing `src/fixture.ts`, then run the copied `dist/nya learn git <repo> --config <offline-config> --project --json --no-tui` from an isolated cwd.",
+          "expected": "The real dist CLI learn flow succeeds without missing-asset errors and without sqlite-vec load failures.",
+          "observed": "Exit 0. JSON output reported `documentsIndexed: 1`, `chunksIndexed: 1`, `rebuildTriggered: true`, and fingerprint `chunker: tree-sitter`. stderr was empty; the captured summary flags show no missing tree-sitter asset error and no sqlite-vec load failure. The project DB was created at `/tmp/nya2-val-ops-031-3knq1jnb/isolated-cwd/.nya-cli/index.sqlite`."
+        },
+        {
+          "action": "Run a focused follow-up search for the unique TypeScript marker using the same copied dist artifact and offline config.",
+          "expected": "Search returns the indexed TypeScript chunk, confirming chunking/indexing completed in the isolated dist runtime.",
+          "observed": "Exit 0. Search returned `src/fixture.ts` with section `fixture.ts \u00b7 distAssetChunkingMarker031`, snippet containing the exported function marker, and retrievers `vector`, `fts`, and `metadata`."
+        }
+      ],
+      "evidence": {
+        "terminalTranscripts": [
+          "ops/cli-ops-rerun/build.transcript.txt",
+          "ops/cli-ops-rerun/fixture-setup.transcript.txt",
+          "ops/cli-ops-rerun/learn-git.transcript.txt",
+          "ops/cli-ops-rerun/search-marker.transcript.txt"
+        ],
+        "stdoutFiles": [
+          "ops/cli-ops-rerun/build.stdout.txt",
+          "ops/cli-ops-rerun/learn-git.stdout.txt",
+          "ops/cli-ops-rerun/search-marker.stdout.txt"
+        ],
+        "stderrFiles": [
+          "ops/cli-ops-rerun/build.stderr.txt",
+          "ops/cli-ops-rerun/learn-git.stderr.txt",
+          "ops/cli-ops-rerun/search-marker.stderr.txt"
+        ],
+        "assetInventory": "ops/cli-ops-rerun/dist-assets.txt",
+        "summary": "ops/cli-ops-rerun/isolated-runtime-summary.json",
+        "network": "Loopback only: `POST /v1/embeddings -> 200` twice; see `ops/cli-ops-rerun/embedding-stub.log`."
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Retested 1 assertion: 1 passed. The rebuilt artifact bundles the required tree-sitter and sqlite-vec runtime assets, and a copied `/tmp` dist package successfully learned and searched a TypeScript fixture repo offline without missing-asset or sqlite-vec load errors."
+}
