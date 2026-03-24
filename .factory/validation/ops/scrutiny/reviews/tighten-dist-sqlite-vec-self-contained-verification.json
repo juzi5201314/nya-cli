@@ -1,0 +1,15 @@
+{
+  "featureId": "tighten-dist-sqlite-vec-self-contained-verification",
+  "reviewedAt": "2026-03-24T17:29:47.788113+00:00",
+  "commitId": "0b4545aa280a07630b4d00bf7bdbbd3c1299bdbd",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix closes the prior blocker. In dist mode, sqlite-vec resolution is now restricted to the copied artifact's sibling `dist/sqlite-vec` asset, and the build-artifact regression now executes a copied `dist/nya` from a temp package plus a negative missing-asset case, so repo-adjacent `node_modules` can no longer mask a broken dist package.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": "/root/projects/nya2/.factory/validation/ops/scrutiny/reviews/fix-dist-sqlite-vec-extension-packaging.json",
+  "summary": "I reviewed the prior failed review and synthesis, the fix feature metadata, handoff, transcript skeleton, ops-worker skill, and both commit diffs (`29e9a7f` and `0b4545a`). The new resolver removes dist-mode fallback to repo-adjacent `node_modules` (`src/db/sqlite-vec-runtime.ts:65-66`), and the updated regression copies `dist/` into temp for help/doctor/tree-sitter/learn-git checks plus a failing missing-sqlite-vec case (`tests/build-artifact.test.ts:238-245`, `322-385`, `413-456`), so the dist sqlite-vec verification is now self-contained and adequately addresses the original failure."
+}
