@@ -8,11 +8,7 @@
     "failed": 0,
     "blocked": 0
   },
-  "passedAssertions": [
-    "VAL-OPS-001",
-    "VAL-OPS-030",
-    "VAL-OPS-031"
-  ],
+  "passedAssertions": ["VAL-OPS-001", "VAL-OPS-030", "VAL-OPS-031"],
   "failedAssertions": [],
   "blockedAssertions": [],
   "appliedUpdates": [],

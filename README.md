@@ -720,9 +720,36 @@ nya web search "your query"
 ### 检查
 
 ```bash
+# 推荐（typecheck + lint）
+bun run check
+
+# 单独执行
 bun run typecheck
-bun test
 bunx biome check .
+
+# 测试
+bun test
+```
+
+### 离线 CI Gate
+
+```bash
+# 离线默认 gate：check + test（不包含 smoke / eval）
+bun run ci
+```
+
+### Eval perf baseline（离线）
+
+```bash
+bun run eval:perf
+bun run eval:perf:check
+```
+
+### Google smoke（可跳过）
+
+```bash
+# 无 GOOGLE_GENERATIVE_AI_API_KEY 时会自动 short-circuit 为 skipped
+bun run smoke:google
 ```
 
 ### 构建

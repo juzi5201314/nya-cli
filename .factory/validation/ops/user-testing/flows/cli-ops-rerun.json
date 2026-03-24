@@ -11,12 +11,7 @@
     "configPath": "/tmp/nya2-val-ops-031-3knq1jnb/offline-openai.toml",
     "databasePath": "/tmp/nya2-val-ops-031-3knq1jnb/isolated-cwd/.nya-cli/index.sqlite"
   },
-  "toolsUsed": [
-    "shell",
-    "bun",
-    "git",
-    "python3"
-  ],
+  "toolsUsed": ["shell", "bun", "git", "python3"],
   "assertions": [
     {
       "id": "VAL-OPS-031",
