@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { ZodType } from 'zod';
+import { type ZodType, z } from 'zod';
 
 import { learnGitSource } from '../core/ingest/learn-git';
 import { aiSearchIndex } from '../core/search/ai-search';
@@ -188,7 +188,11 @@ const fixtureFiles = {
 
 const searchQuery = 'hybrid retrieval evidence';
 const aiSearchQuery = 'What keeps the offline eval fixture grounded?';
-const stableMetricPaths = [
+const exactMatchMetricPaths = [
+  'schemaVersion',
+  'fixture.name',
+  'fixture.searchQuery',
+  'fixture.aiSearchQuery',
   'fixture.sourceFiles',
   'metrics.dataset.documentsIndexed',
   'metrics.dataset.chunksIndexed',
@@ -219,9 +223,9 @@ const defaultTimingMaxRegressionRatio = 1.5;
 const defaultTimingAbsoluteBufferMs = 25;
 
 export type EvalPerfResult = {
-  schemaVersion: 1;
+  schemaVersion: number;
   fixture: {
-    name: 'offline-eval-perf';
+    name: string;
     sourceFiles: number;
     searchQuery: string;
     aiSearchQuery: string;
@@ -272,6 +276,62 @@ export type EvalPerfResult = {
     };
   };
 };
+
+const evalPerfResultSchema: z.ZodType<EvalPerfResult> = z.object({
+  schemaVersion: z.number().int().positive(),
+  fixture: z.object({
+    name: z.string().min(1),
+    sourceFiles: z.number().int().nonnegative(),
+    searchQuery: z.string().min(1),
+    aiSearchQuery: z.string().min(1),
+  }),
+  metrics: z.object({
+    dataset: z.object({
+      documentsIndexed: z.number().int().nonnegative(),
+      chunksIndexed: z.number().int().nonnegative(),
+      skippedSymlinks: z.number().int().nonnegative(),
+    }),
+    search: z.object({
+      limit: z.number().int().nonnegative(),
+      results: z.number().int().nonnegative(),
+      retrieversUsed: z.array(z.string()),
+      vectorCandidates: z.number().int().nonnegative(),
+      ftsCandidates: z.number().int().nonnegative(),
+      lexicalCandidates: z.number().int().nonnegative(),
+      metadataCandidates: z.number().int().nonnegative(),
+    }),
+    aiSearch: z.object({
+      limit: z.number().int().nonnegative(),
+      maxSteps: z.number().int().positive(),
+      maxQueriesPerStep: z.number().int().positive(),
+      maxEvidenceChunks: z.number().int().positive(),
+      iterations: z.number().int().nonnegative(),
+      usedQueries: z.number().int().nonnegative(),
+      evidence: z.number().int().nonnegative(),
+      citations: z.number().int().nonnegative(),
+      groundingStatus: z.enum([
+        'grounded',
+        'insufficient_evidence',
+        'citation_validation_failed',
+      ]),
+      structuredOutputFallbackUsed: z.boolean(),
+    }),
+    llm: z.object({
+      plannerCalls: z.number().int().nonnegative(),
+      answerCalls: z.number().int().nonnegative(),
+      totalCalls: z.number().int().nonnegative(),
+    }),
+  }),
+  telemetry: z.object({
+    timingsMs: z.object({
+      fixtureSetup: z.number().nonnegative(),
+      learnGit: z.number().nonnegative(),
+      search: z.number().nonnegative(),
+      aiSearch: z.number().nonnegative(),
+      total: z.number().nonnegative(),
+    }),
+  }),
+});
 
 export type EvalPerfRegression = {
   metricPath: string;
@@ -506,7 +566,7 @@ function compareStableMetrics(
   baseline: EvalPerfResult,
   current: EvalPerfResult
 ): EvalPerfRegression[] {
-  return stableMetricPaths.flatMap((metricPath) => {
+  return exactMatchMetricPaths.flatMap((metricPath) => {
     const baselineValue = readPathValue(baseline, metricPath);
     const currentValue = readPathValue(current, metricPath);
 
@@ -597,7 +657,7 @@ export function compareEvalPerfResults(args: {
     schemaVersion: 1,
     status: regressions.length === 0 ? 'passed' : 'failed',
     baselinePath: args.baselinePath,
-    checkedMetricCount: stableMetricPaths.length,
+    checkedMetricCount: exactMatchMetricPaths.length,
     timingChecks: {
       enabled: timingChecksEnabled,
       maxRegressionRatio: timingMaxRegressionRatio,
@@ -611,7 +671,29 @@ async function readEvalPerfBaseline(
   baselinePath: string
 ): Promise<EvalPerfResult> {
   const raw = await readFile(baselinePath, 'utf8');
-  return JSON.parse(raw) as EvalPerfResult;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Invalid eval perf baseline at ${baselinePath}: expected valid JSON (${message})`
+    );
+  }
+
+  const validated = evalPerfResultSchema.safeParse(parsed);
+  if (!validated.success) {
+    const issues = validated.error.issues
+      .map((issue) => {
+        const path = issue.path.length > 0 ? issue.path.join('.') : '(root)';
+        return `${path}: ${issue.message}`;
+      })
+      .join('; ');
+    throw new Error(`Invalid eval perf baseline at ${baselinePath}: ${issues}`);
+  }
+
+  return validated.data;
 }
 
 export async function writeEvalPerfBaseline(
