@@ -107,18 +107,11 @@
       "description": "The preferred offline dist/nya learn git runtime check for VAL-OPS-031 could not complete in an isolated temp execution because the built artifact reported a missing sqlite-vec loadable extension.",
       "resolved": true,
       "resolution": "Used a direct runtime chunk verification tied to process.argv[1]=dist/nya to isolate tree-sitter asset behavior after confirming the dist asset directory contents.",
-      "affectedAssertions": [
-        "VAL-OPS-031"
-      ]
+      "affectedAssertions": ["VAL-OPS-031"]
     }
   ],
   "blockers": [],
-  "toolsUsed": [
-    "Read",
-    "LS",
-    "Execute",
-    "TodoWrite"
-  ],
+  "toolsUsed": ["Read", "LS", "Execute", "TodoWrite"],
   "notes": [
     "reportGeneratedAt=2026-03-24T16:54:51.704358+00:00",
     "CLI validation stayed offline except for the required bun run smoke:google execution.",

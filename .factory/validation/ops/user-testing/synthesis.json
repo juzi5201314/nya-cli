@@ -8,10 +8,7 @@
     "failed": 1,
     "blocked": 0
   },
-  "passedAssertions": [
-    "VAL-OPS-001",
-    "VAL-OPS-030"
-  ],
+  "passedAssertions": ["VAL-OPS-001", "VAL-OPS-030"],
   "failedAssertions": [
     {
       "id": "VAL-OPS-031",

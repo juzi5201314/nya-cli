@@ -3,11 +3,11 @@ import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import * as sqliteVec from 'sqlite-vec';
 
 import type { EmbeddingFingerprint } from '../providers/types';
 import { normalizeLocatorForStorage, redactText } from '../utils/redaction';
 import { extractSearchTerms } from '../utils/text';
+import { loadSqliteVec } from './sqlite-vec-runtime';
 
 const SCHEMA_VERSION = '4';
 
@@ -150,7 +150,7 @@ export async function openDatabase(databasePath: string): Promise<Database> {
       db.run('PRAGMA busy_timeout = 5000;');
       db.run('PRAGMA journal_mode = WAL;');
       db.run('PRAGMA foreign_keys = ON;');
-      sqliteVec.load(db);
+      loadSqliteVec(db);
       ensureMetadataTable(db);
       ensureSchema(db);
       ensureSourceManifestTable(db);

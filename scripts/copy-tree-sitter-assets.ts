@@ -10,7 +10,7 @@ import {
 import { resolve } from 'node:path';
 
 const executablePath = resolve(process.cwd(), 'dist', 'nya');
-const distDir = resolve(process.cwd(), 'dist', 'tree-sitter');
+const treeSitterDistDir = resolve(process.cwd(), 'dist', 'tree-sitter');
 const bunShebang = '#!/usr/bin/env bun\n';
 const sources = [
   resolve(
@@ -28,6 +28,22 @@ const grammarDir = resolve(
   'out'
 );
 
+function getSqliteVecPackageName(): string {
+  const os = process.platform === 'win32' ? 'windows' : process.platform;
+  return `sqlite-vec-${os}-${process.arch}`;
+}
+
+function getSqliteVecFilename(): string {
+  if (process.platform === 'win32') {
+    return 'vec0.dll';
+  }
+  if (process.platform === 'darwin') {
+    return 'vec0.dylib';
+  }
+
+  return 'vec0.so';
+}
+
 async function main(): Promise<void> {
   const executableContents = await readFile(executablePath, 'utf8');
   if (!executableContents.startsWith(bunShebang)) {
@@ -35,11 +51,14 @@ async function main(): Promise<void> {
   }
 
   await chmod(executablePath, 0o755);
-  await rm(distDir, { recursive: true, force: true });
-  await mkdir(distDir, { recursive: true });
+  await rm(treeSitterDistDir, { recursive: true, force: true });
+  await mkdir(treeSitterDistDir, { recursive: true });
 
   for (const source of sources) {
-    const target = resolve(distDir, source.split('/').at(-1) ?? 'asset.wasm');
+    const target = resolve(
+      treeSitterDistDir,
+      source.split('/').at(-1) ?? 'asset.wasm'
+    );
     await copyFile(source, target);
   }
 
@@ -49,8 +68,30 @@ async function main(): Promise<void> {
       continue;
     }
 
-    await copyFile(resolve(grammarDir, file), resolve(distDir, file));
+    await copyFile(resolve(grammarDir, file), resolve(treeSitterDistDir, file));
   }
+
+  const sqliteVecPackageName = getSqliteVecPackageName();
+  const sqliteVecFilename = getSqliteVecFilename();
+  const sqliteVecDistDir = resolve(
+    process.cwd(),
+    'dist',
+    'sqlite-vec',
+    sqliteVecPackageName
+  );
+  const sqliteVecSource = resolve(
+    process.cwd(),
+    'node_modules',
+    sqliteVecPackageName,
+    sqliteVecFilename
+  );
+
+  await rm(resolve(process.cwd(), 'dist', 'sqlite-vec'), {
+    recursive: true,
+    force: true,
+  });
+  await mkdir(sqliteVecDistDir, { recursive: true });
+  await copyFile(sqliteVecSource, resolve(sqliteVecDistDir, sqliteVecFilename));
 }
 
 await main();
