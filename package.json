@@ -6,7 +6,7 @@
   "description": "Knowledge base CLI for agents",
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "bun build src/index.ts --target bun --outfile dist/nya --external react-devtools-core && bun run scripts/copy-tree-sitter-assets.ts",
+    "build": "bun build src/index.ts --target bun --outfile dist/nya && bun run scripts/copy-tree-sitter-assets.ts",
     "ci": "bun run check && bun test",
     "smoke:google": "bun run scripts/smoke-google.ts",
     "eval:perf": "bun run scripts/eval-perf.ts",
@@ -28,6 +28,7 @@
     "linkedom": "^0.18.12",
     "pino": "^10.3.1",
     "react": "^19.2.4",
+    "react-devtools-core": "^7.0.1",
     "sqlite-vec": "^0.1.7-alpha.2",
     "turndown": "^7.2.2",
     "web-tree-sitter": "^0.26.7",

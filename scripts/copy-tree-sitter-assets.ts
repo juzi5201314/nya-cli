@@ -1,7 +1,17 @@
-import { copyFile, mkdir, readdir, rm } from 'node:fs/promises';
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+const executablePath = resolve(process.cwd(), 'dist', 'nya');
 const distDir = resolve(process.cwd(), 'dist', 'tree-sitter');
+const bunShebang = '#!/usr/bin/env bun\n';
 const sources = [
   resolve(
     process.cwd(),
@@ -19,6 +29,12 @@ const grammarDir = resolve(
 );
 
 async function main(): Promise<void> {
+  const executableContents = await readFile(executablePath, 'utf8');
+  if (!executableContents.startsWith(bunShebang)) {
+    await writeFile(executablePath, `${bunShebang}${executableContents}`);
+  }
+
+  await chmod(executablePath, 0o755);
   await rm(distDir, { recursive: true, force: true });
   await mkdir(distDir, { recursive: true });
 
