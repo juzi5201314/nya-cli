@@ -1,0 +1,28 @@
+{
+  "featureId": "fix-dist-sqlite-vec-extension-packaging",
+  "reviewedAt": "2026-03-24T17:14:28+00:00",
+  "commitId": "29e9a7f44cfc36ee89ff4d77e5a705954172eb7e",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The fix adds a dist sqlite-vec copy step, switches database startup to a custom runtime resolver, and extends `tests/build-artifact.test.ts` with an offline `dist/nya learn git ... --project --json --no-tui` flow. However, it still does not prove the bundled dist asset is what makes isolated dist execution succeed: `resolveSqliteVecLoadablePath()` falls back to `../node_modules` next to `dist/nya`, and the regression test invokes the in-repo `dist/nya` directly instead of copying the artifact away from the repository. That means the test can keep passing if sqlite-vec dist lookup regresses again while `/root/projects/nya2/node_modules/sqlite-vec-*` is still present.",
+    "issues": [
+      {
+        "file": "src/db/sqlite-vec-runtime.ts",
+        "line": 65,
+        "severity": "blocking",
+        "description": "The new resolver falls back to `resolve(runtimeDir, '..', 'node_modules', packageName, filename)` immediately after the dist candidate. Because the regression test runs `/root/projects/nya2/dist/nya` in place, a broken or unused `dist/sqlite-vec/...` package can be masked by the repository's adjacent `node_modules`. This means the fix does not fully satisfy the requirement to ensure the built dist artifact itself is sufficient/resolvable in isolated temp execution, and the new regression would not reliably fail on future dist-runtime sqlite-vec packaging regressions."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "Shared-state docs still do not record the sqlite-vec dist-runtime packaging contract or the need to verify dist runtime behavior without falling back to repo `node_modules`.",
+      "evidence": "The worker transcript skeleton shows explicit inspection of `node_modules/sqlite-vec/index.mjs`, `node_modules/sqlite-vec/index.cjs`, and `node_modules/sqlite-vec-linux-x64` before implementation, while `.factory/library/architecture.md` only documents the tree-sitter dist asset rule and has no corresponding sqlite-vec runtime note."
+    }
+  ],
+  "addressesFailureFrom": ".factory/validation/ops/scrutiny/reviews/ops-build-artifact-verification.json",
+  "summary": "I reviewed the fix handoff, transcript skeleton, ops-worker skill, prior review, prior user-testing synthesis, and both commit diffs (`f148fcb` and `29e9a7f`). The code moves sqlite-vec toward dist packaging, but the new runtime resolver and regression test still allow success via the repo's adjacent `node_modules`, so I marked the review as failing because the sqlite-vec dist-runtime regression coverage is not yet strong enough."
+}

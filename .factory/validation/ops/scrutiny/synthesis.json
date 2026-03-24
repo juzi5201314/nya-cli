@@ -1,7 +1,7 @@
 {
   "milestone": "ops",
-  "round": 1,
-  "status": "pass",
+  "round": 2,
+  "status": "fail",
   "validatorsRun": {
     "test": {
       "passed": true,
@@ -20,20 +20,31 @@
     }
   },
   "reviewsSummary": {
-    "total": 3,
-    "passed": 3,
-    "failed": 0,
-    "failedFeatures": []
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "failedFeatures": ["fix-dist-sqlite-vec-extension-packaging"]
   },
-  "blockingIssues": [],
+  "blockingIssues": [
+    {
+      "featureId": "fix-dist-sqlite-vec-extension-packaging",
+      "severity": "blocking",
+      "description": "The dist sqlite-vec resolver and regression test still allow success via repo-adjacent node_modules, so the built dist artifact is not yet proven self-sufficient for isolated temp execution."
+    }
+  ],
   "appliedUpdates": [
     {
       "target": "library",
       "description": "Documented that dist artifacts must ship `dist/tree-sitter/*.wasm` because tree-sitter runtime asset resolution is relative to the executing entrypoint.",
       "sourceFeature": "ops-build-artifact-verification"
+    },
+    {
+      "target": "library",
+      "description": "Documented that sqlite-vec dist-runtime verification must isolate the built artifact from repo-adjacent `node_modules`, otherwise fallback resolution can mask packaging regressions.",
+      "sourceFeature": "fix-dist-sqlite-vec-extension-packaging"
     }
   ],
   "suggestedGuidanceUpdates": [],
   "rejectedObservations": [],
-  "previousRound": null
+  "previousRound": "/root/projects/nya2/.factory/validation/ops/scrutiny/synthesis.round1.json"
 }
