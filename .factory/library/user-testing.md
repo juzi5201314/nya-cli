@@ -16,6 +16,7 @@ How validators should test the real user surface for this project.
 - Use the real CLI entrypoint (`bun run src/index.ts` or `dist/nya` when explicitly validating build output).
 - Always isolate state with a temp working directory and `--project` when touching the DB.
 - Prefer `--json --no-tui` so results are machine-checkable and stable.
+- If `tuistory` is unavailable in the environment, still follow its CLI-testing guidance and capture equivalent terminal evidence with `/usr/bin/script` plus separate stdout/stderr files.
 - Do not share temp repos or `.nya-cli/` directories across validators.
 - For safety validations, use fixture repos / files that contain unique markers and secret-like strings, then assert they are absent from output or persistence.
 - `get` 不支持 `--no-tui`，验证取回失败路径时请省略该参数。

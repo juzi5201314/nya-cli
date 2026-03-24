@@ -1,0 +1,83 @@
+{
+  "groupId": "eval-perf-cli",
+  "testedAt": "2026-03-24T16:18:48.658451+00:00",
+  "isolation": {
+    "surface": "CLI",
+    "repoRoot": "/root/projects/nya2",
+    "missionDir": "/root/.factory/missions/6586b515-2320-4b22-9fa5-669b0710e675",
+    "workingTreeModified": false,
+    "sharedDbStateModifiedOutsideCommandNeeds": false
+  },
+  "toolsUsed": [
+    "tuistory skill (guidance only; CLI unavailable in environment)",
+    "shell",
+    "script",
+    "python3"
+  ],
+  "assertions": [
+    {
+      "id": "VAL-OPS-020",
+      "title": "Performance baseline command emits stable JSON metrics (offline)",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run `bun run eval:perf` from `/root/projects/nya2` and parse stdout as JSON.",
+          "expected": "Exit 0 and emit valid offline JSON with a schema-stable metrics object.",
+          "observed": "Exit 0; parsed JSON with schemaVersion=1, fixture.name=offline-eval-perf, metrics fields=['aiSearch.citations', 'aiSearch.evidence', 'aiSearch.groundingStatus', 'aiSearch.iterations', 'aiSearch.limit', 'aiSearch.maxEvidenceChunks', 'aiSearch.maxQueriesPerStep', 'aiSearch.maxSteps', 'aiSearch.structuredOutputFallbackUsed', 'aiSearch.usedQueries', 'dataset.chunksIndexed', 'dataset.documentsIndexed', 'dataset.skippedSymlinks', 'llm.answerCalls', 'llm.plannerCalls', 'llm.totalCalls', 'search.ftsCandidates', 'search.lexicalCandidates', 'search.limit', 'search.metadataCandidates', 'search.results', 'search.retrieversUsed', 'search.vectorCandidates']."
+        },
+        {
+          "action": "Compare the emitted metrics object shape with the committed baseline shape.",
+          "expected": "Metrics schema remains stable across baseline and current output.",
+          "observed": "Current metrics shape matched the committed baseline; required fields covered dataset/search/aiSearch/llm metrics (23 paths checked)."
+        },
+        {
+          "action": "Run `bun run eval:perf:check` from `/root/projects/nya2`.",
+          "expected": "Exit 0 with a passed result against the committed baseline.",
+          "observed": "Exit 0; status=passed; baselinePath=/root/projects/nya2/tests/fixtures/eval-perf-baseline.json; checkedMetricCount=28; regressions=[]."
+        },
+        {
+          "action": "Create a modified baseline outside the repo with `metrics.search.results` incremented, then run `bun run eval:perf:check --baseline <modified>`.",
+          "expected": "Exit non-zero and report deterministic regression details.",
+          "observed": "Exit 1; status=failed; regressions=[{'metricPath': 'metrics.search.results', 'rule': 'exact', 'baseline': 4, 'current': 3}]."
+        }
+      ],
+      "evidence": {
+        "terminalSnapshots": [
+          "eval-perf/eval-perf-cli/VAL-OPS-020-eval-perf-terminal.txt",
+          "eval-perf/eval-perf-cli/VAL-OPS-020-eval-perf-check-pass-terminal.txt",
+          "eval-perf/eval-perf-cli/VAL-OPS-020-eval-perf-check-fail-terminal.txt"
+        ],
+        "stdoutFiles": [
+          "eval-perf/eval-perf-cli/VAL-OPS-020-eval-perf-stdout.json",
+          "eval-perf/eval-perf-cli/VAL-OPS-020-eval-perf-check-pass-stdout.json",
+          "eval-perf/eval-perf-cli/VAL-OPS-020-eval-perf-check-fail-stdout.json"
+        ],
+        "stderrFiles": [
+          "eval-perf/eval-perf-cli/VAL-OPS-020-eval-perf-stderr.txt",
+          "eval-perf/eval-perf-cli/VAL-OPS-020-eval-perf-check-pass-stderr.txt",
+          "eval-perf/eval-perf-cli/VAL-OPS-020-eval-perf-check-fail-stderr.txt"
+        ],
+        "artifacts": [
+          "eval-perf/eval-perf-cli/VAL-OPS-020-regressed-baseline.json",
+          "eval-perf/eval-perf-cli/VAL-OPS-020-machine-summary.json"
+        ],
+        "exitCodes": {
+          "evalPerf": 0,
+          "evalPerfCheck": 0,
+          "evalPerfCheckRegressedBaseline": 1
+        }
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "The requested `tuistory` CLI was unavailable in this environment: after installing the package, it failed on missing `node-pty`, and follow-up install attempts failed because native compilation required `g++`.",
+      "resolved": true,
+      "resolution": "Used the `tuistory` skill for guidance, then captured terminal transcripts with `/usr/bin/script` and machine-checkable stdout/stderr files via shell commands.",
+      "affectedAssertions": ["VAL-OPS-020"]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 1 assertion: 1 passed. `bun run eval:perf` exited 0 with valid schema-stable JSON metrics, `bun run eval:perf:check` exited 0 against the committed baseline, and `bun run eval:perf:check --baseline <modified>` exited 1 with a regression on `metrics.search.results`."
+}
