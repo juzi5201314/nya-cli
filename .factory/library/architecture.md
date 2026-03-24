@@ -11,6 +11,7 @@ Key factual notes about the current architecture and decision points.
 - Vector: `sqlite-vec`
 - Keyword: FTS5
 - Chunking: Tree-sitter first, with fallback sliding-window for non-code or failures
+- Dist runtime note: Tree-sitter chunking resolves wasm assets relative to the executing entrypoint (`process.argv[1]`), so production artifacts must keep `dist/tree-sitter/*.wasm` alongside `dist/nya`.
 - `db doctor` uses a temporary read-only snapshot copy of `index.sqlite` plus `-wal`/`-shm` sidecars when they exist, so the doctor path can inspect state without mutating the live project database.
 
 ## Provider boundaries

@@ -1,0 +1,21 @@
+{
+  "featureId": "ops-build-artifact-verification",
+  "reviewedAt": "2026-03-24T16:42:32+00:00",
+  "commitId": "f148fcb80789df6562da59d8cb958cf9c297239b",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Commit f148fcb satisfies the feature requirements. `package.json` now builds `dist/nya` without externalizing the optional Ink devtools dependency and includes `react-devtools-core`, which removes the runtime hole that prevented the offline artifact from starting (`package.json:9,31`). The post-build asset script makes `dist/nya` directly executable via a Bun shebang and `chmod 755`, then copies the core `web-tree-sitter.wasm` plus all grammar wasm files into `dist/tree-sitter` (`scripts/copy-tree-sitter-assets.ts:12-53`). The new integration test exercises the required offline evidence path by running `bun run build`, invoking `dist/nya --help`, invoking `dist/nya db doctor --project --json --no-tui` from an isolated temp directory, asserting runtime assets exist, and confirming tree-sitter chunking works when resolving assets from the dist runtime directory (`tests/build-artifact.test.ts:51-121`).",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "Shared-state docs do not currently record the dist runtime asset lookup contract for tree-sitter. Future workers touching build/dist behavior may need to rediscover that chunking resolves wasm assets relative to the executing entrypoint directory.",
+      "evidence": "The worker transcript shows explicit inspection of `src/core/chunking/chunk-code-tree-sitter.ts` before implementation, and the code resolves `<runtimeDir>/tree-sitter/*.wasm` from `process.argv[1]` (`src/core/chunking/chunk-code-tree-sitter.ts:245-281`). `.factory/library/architecture.md` mentions Tree-sitter chunking generally but does not document the dist-runtime asset resolution rule."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed the handoff, transcript skeleton, ops-worker skill, shared-state docs, and commit f148fcb. The implementation fulfills the runnable dist artifact and runtime asset requirements, and I found no blocking or non-blocking code issues."
+}

@@ -1,0 +1,15 @@
+{
+  "featureId": "ops-skill-add-validation-droid-portability-guidance",
+  "reviewedAt": "2026-03-24T16:41:25Z",
+  "commitId": "45f256a6e8c151b4da174cdd9a1dc56f3ea84bc9",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The skill update fully covers the requested portability workflow: it keeps repo validation droids on model inheritance by default, directs workers to adjust mission-level validationWorkerModel first, gives concrete trivial Task probes for both validation droids, and documents temporary pin-and-restore only as a blocked fallback.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed the feature transcript skeleton, handoff, and commit diff. The only code change is the ops-worker skill guidance, and it satisfies the feature description and expected behavior with no blocking or non-blocking issues found."
+}

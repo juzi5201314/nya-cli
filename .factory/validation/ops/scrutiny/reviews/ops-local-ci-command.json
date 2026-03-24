@@ -1,0 +1,15 @@
+{
+  "featureId": "ops-local-ci-command",
+  "reviewedAt": "2026-03-24T16:41:53.319865+00:00",
+  "commitId": "bf4642f",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Commit bf4642f adds `bun run ci` as `bun run check && bun test` in `package.json` and locks that contract with `tests/ci-script.test.ts`. That satisfies the feature requirements: the command exists, short-circuits on validator failure via `&&`, stays offline-by-default, and does not invoke smoke/eval steps or require API keys.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed the handoff, transcript skeleton, ops-worker skill, shared-state docs, and commit bf4642f. The feature satisfies the offline CI gate requirement with no blocking or non-blocking issues found."
+}
