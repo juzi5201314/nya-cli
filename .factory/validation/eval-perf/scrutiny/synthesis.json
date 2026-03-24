@@ -1,0 +1,46 @@
+{
+  "milestone": "eval-perf",
+  "round": 2,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "bun test",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "bun run typecheck",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "bunx biome check .",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "failedFeatures": ["eval-perf-baseline"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "eval-perf-baseline",
+      "severity": "blocking",
+      "description": "`eval:perf:check` only compares `fixture.sourceFiles` plus selected `metrics.*` fields. It never validates `schemaVersion`, `fixture.name`, `fixture.searchQuery`, or `fixture.aiSearchQuery`, and `readEvalPerfBaseline()` later accepts the baseline via an unchecked JSON cast. That means the command can still pass after fixture/query/schema drift, which violates the requirement that this tooling guard a fixed fixture dataset and schema-stable JSON output."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Update the mission command list when new validation-facing commands land so scrutiny and user-testing workers can rely on AGENTS.md and services.yaml staying aligned.",
+      "evidence": "Mission AGENTS.md:18-22 lists only check/test/ci/smoke commands, while /root/projects/nya2/.factory/services.yaml defines `eval_perf: bun run eval:perf` and `eval_perf_check: bun run eval:perf:check`.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": "/root/projects/nya2/.factory/validation/eval-perf/scrutiny/synthesis.round1.json"
+}

@@ -1,0 +1,46 @@
+{
+  "milestone": "eval-perf",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "bun test",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "bun run typecheck",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "bunx biome check .",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "failedFeatures": ["eval-perf-baseline"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "eval-perf-baseline",
+      "severity": "blocking",
+      "description": "Unable to execute required review subagent for this feature. Task launches repeatedly failed in this validator session (initially `Invalid model: custom:GPT-5.3-codex`, then no assistant-message events even after temporary reviewer-model overrides), so no review report could be generated."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add an explicit scrutiny fallback policy for subagent infrastructure failure (for example: when Task launches fail after model troubleshooting, whether validator should perform an in-process review fallback or fail-fast).",
+      "evidence": "This validator run completed all core validators but could not spawn any review subagent due Task launch failures, leaving no canonical path in guidance for proceeding.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}

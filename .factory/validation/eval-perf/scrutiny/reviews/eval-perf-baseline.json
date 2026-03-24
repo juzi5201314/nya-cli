@@ -1,0 +1,28 @@
+{
+  "featureId": "eval-perf-baseline",
+  "reviewedAt": "2026-03-24T15:53:26.921441Z",
+  "commitId": "044fcfd",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The feature adds offline perf-baseline tooling and committed fixture data as intended, but the regression gate does not actually lock the full fixture/schema contract, so the baseline check can miss contract drift.",
+    "issues": [
+      {
+        "file": "src/commands/eval-perf.ts",
+        "line": 191,
+        "severity": "blocking",
+        "description": "`eval:perf:check` only compares `fixture.sourceFiles` plus selected `metrics.*` fields. It never validates `schemaVersion`, `fixture.name`, `fixture.searchQuery`, or `fixture.aiSearchQuery`, and `readEvalPerfBaseline()` later accepts the baseline via an unchecked JSON cast. That means the command can still pass after fixture/query/schema drift, which violates the requirement that this tooling guard a fixed fixture dataset and schema-stable JSON output."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The mission AGENTS file's authoritative command list is stale after this feature: it does not mention the new perf baseline commands even though they are now part of the validation surface.",
+      "evidence": "Mission AGENTS.md:18-22 lists only check/test/ci/smoke commands, while /root/projects/nya2/.factory/services.yaml defines `eval_perf: bun run eval:perf` and `eval_perf_check: bun run eval:perf:check`."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed the feature handoff, commit 044fcfd, transcript skeleton, ops-worker skill, and changed files. The implementation is offline and mostly aligned with VAL-OPS-020, but review fails because check mode does not enforce fixture identity/schema stability, so it can miss contract drift that should invalidate the baseline."
+}
