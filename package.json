@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "bun run src/index.ts",
     "build": "bun build src/index.ts --target bun --outfile dist/nya --external react-devtools-core && bun run scripts/copy-tree-sitter-assets.ts",
+    "ci": "bun run check && bun test",
     "smoke:google": "bun run scripts/smoke-google.ts",
     "eval:perf": "bun run scripts/eval-perf.ts",
     "eval:perf:check": "bun run scripts/eval-perf-check.ts",
