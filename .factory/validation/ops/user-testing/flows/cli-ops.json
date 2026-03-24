@@ -1,0 +1,128 @@
+{
+  "milestone": "ops",
+  "surface": "cli",
+  "assertions": [
+    {
+      "id": "VAL-OPS-001",
+      "status": "pass",
+      "summary": "The offline local CI gate succeeded without requiring interactive input or external API setup.",
+      "evidence": [
+        "bun run ci exited 0; stdout/stderr/transcript captured in mission evidence.",
+        "CI output ran bun run check && bun test and reported 83 pass, 1 skip, 0 fail.",
+        "No smoke/eval command invocation appeared in the CI output."
+      ]
+    },
+    {
+      "id": "VAL-OPS-030",
+      "status": "pass",
+      "summary": "The build completed offline and produced a runnable dist/nya artifact whose help and db doctor entrypoints worked from fresh temp directories.",
+      "evidence": [
+        "bun run build exited 0 and rebuilt dist/nya.",
+        "dist/nya --help exited 0 and printed the CLI usage banner.",
+        "dist/nya db doctor --project --json --no-tui exited 0 in a fresh temp dir; JSON parsed with dbExists=false and no .nya-cli directory was created."
+      ]
+    },
+    {
+      "id": "VAL-OPS-031",
+      "status": "fail",
+      "summary": "Required tree-sitter assets are present and direct runtime chunking against the dist runtime succeeds, but the preferred dist/nya learn git user-surface flow fails before completion because the built artifact cannot load sqlite-vec in isolated temp execution.",
+      "evidence": [
+        "dist/tree-sitter listing included web-tree-sitter.wasm and tree-sitter-typescript.wasm.",
+        "Direct runtime chunk verification exited 0 and produced 2 chunks, including section \"fixture.ts · opsRuntimeAssetMarker\".",
+        "dist/nya learn git <temp-repo> --project --json --no-tui exited 1 with: \"Loadble extension for sqlite-vec not found. Was the sqlite-vec-linux-x64 package installed?\""
+      ]
+    }
+  ],
+  "overallStatus": "fail",
+  "commands": [
+    {
+      "command": "bun run ci",
+      "exitCode": 0,
+      "observation": "Offline CI gate succeeded; output showed bun run check && bun test with 83 pass / 1 skip / 0 fail."
+    },
+    {
+      "command": "bun run build",
+      "exitCode": 0,
+      "observation": "Build succeeded and regenerated dist/nya plus runtime assets."
+    },
+    {
+      "command": "/root/projects/nya2/dist/nya --help",
+      "exitCode": 0,
+      "observation": "Built artifact printed the expected nya usage/help text."
+    },
+    {
+      "command": "/root/projects/nya2/dist/nya db doctor --project --json --no-tui",
+      "exitCode": 0,
+      "observation": "Fresh temp-dir doctor output was valid JSON with dbExists=false, needsRebuild=true, and no .nya-cli side effects."
+    },
+    {
+      "command": "ls -1 /root/projects/nya2/dist/tree-sitter",
+      "exitCode": 0,
+      "observation": "Canonical dist/tree-sitter asset directory contained web-tree-sitter.wasm and tree-sitter-typescript.wasm (18 files total)."
+    },
+    {
+      "command": "/root/projects/nya2/dist/nya learn git /tmp/nya2-ops-cli-6586b515/chunk-fixture/repo --config /tmp/nya2-ops-cli-6586b515/chunk-fixture/nya.toml --project --json --no-tui",
+      "exitCode": 1,
+      "observation": "Preferred offline end-to-end chunking check failed before completion because sqlite-vec could not be loaded by the built artifact in temp execution."
+    },
+    {
+      "command": "bun /tmp/nya2-ops-cli-6586b515/verify-dist-tree-sitter.ts",
+      "exitCode": 0,
+      "observation": "Direct runtime chunk verification using process.argv[1]=dist/nya succeeded and produced symbol-labeled TypeScript chunks."
+    },
+    {
+      "command": "bun run smoke:google",
+      "exitCode": 0,
+      "observation": "Smoke returned status=passed with learn/search/ai-search counts and no detected literal API-key leak in captured stdout/stderr."
+    }
+  ],
+  "evidenceFiles": [
+    "ops/cli-ops/VAL-OPS-001-ci.stdout",
+    "ops/cli-ops/VAL-OPS-001-ci.stderr",
+    "ops/cli-ops/VAL-OPS-001-ci.transcript",
+    "ops/cli-ops/VAL-OPS-030-build.stdout",
+    "ops/cli-ops/VAL-OPS-030-build.stderr",
+    "ops/cli-ops/VAL-OPS-030-build.transcript",
+    "ops/cli-ops/VAL-OPS-030-help.stdout",
+    "ops/cli-ops/VAL-OPS-030-help.stderr",
+    "ops/cli-ops/VAL-OPS-030-help.transcript",
+    "ops/cli-ops/VAL-OPS-030-db-doctor.stdout",
+    "ops/cli-ops/VAL-OPS-030-db-doctor.stderr",
+    "ops/cli-ops/VAL-OPS-030-db-doctor.transcript",
+    "ops/cli-ops/VAL-OPS-031-dist-assets.stdout",
+    "ops/cli-ops/VAL-OPS-031-dist-assets.stderr",
+    "ops/cli-ops/VAL-OPS-031-dist-assets.transcript",
+    "ops/cli-ops/VAL-OPS-031-learn-git.stdout",
+    "ops/cli-ops/VAL-OPS-031-learn-git.stderr",
+    "ops/cli-ops/VAL-OPS-031-learn-git.transcript",
+    "ops/cli-ops/VAL-OPS-031-direct-chunk.stdout",
+    "ops/cli-ops/VAL-OPS-031-direct-chunk.stderr",
+    "ops/cli-ops/VAL-OPS-031-direct-chunk.transcript",
+    "ops/cli-ops/smoke-google.stdout",
+    "ops/cli-ops/smoke-google.stderr",
+    "ops/cli-ops/smoke-google.transcript"
+  ],
+  "frictions": [
+    {
+      "description": "The preferred offline dist/nya learn git runtime check for VAL-OPS-031 could not complete in an isolated temp execution because the built artifact reported a missing sqlite-vec loadable extension.",
+      "resolved": true,
+      "resolution": "Used a direct runtime chunk verification tied to process.argv[1]=dist/nya to isolate tree-sitter asset behavior after confirming the dist asset directory contents.",
+      "affectedAssertions": [
+        "VAL-OPS-031"
+      ]
+    }
+  ],
+  "blockers": [],
+  "toolsUsed": [
+    "Read",
+    "LS",
+    "Execute",
+    "TodoWrite"
+  ],
+  "notes": [
+    "reportGeneratedAt=2026-03-24T16:54:51.704358+00:00",
+    "CLI validation stayed offline except for the required bun run smoke:google execution.",
+    "VAL-OPS-031 used a local OpenAI-compatible embedding stub for the attempted offline learn git flow; the stub server was shut down after validation.",
+    "Smoke result: status=passed, secret source present, captured stdout/stderr did not contain the literal Google API key value."
+  ]
+}

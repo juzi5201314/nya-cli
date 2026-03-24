@@ -1,0 +1,24 @@
+{
+  "milestone": "ops",
+  "round": 1,
+  "status": "fail",
+  "assertionsSummary": {
+    "total": 3,
+    "passed": 2,
+    "failed": 1,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-OPS-001",
+    "VAL-OPS-030"
+  ],
+  "failedAssertions": [
+    {
+      "id": "VAL-OPS-031",
+      "reason": "Required tree-sitter assets are present and direct runtime chunking against the dist runtime succeeds, but the preferred dist/nya learn git user-surface flow fails before completion because the built artifact cannot load sqlite-vec in isolated temp execution."
+    }
+  ],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}
