@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { existsSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SQLITE_VEC_BASE_PACKAGE_NAME = 'sqlite-vec';
@@ -21,6 +21,10 @@ function getRuntimeDirectory(): string | null {
   }
 
   return dirname(resolve(entry));
+}
+
+function isDistRuntime(runtimeDir: string | null): boolean {
+  return runtimeDir !== null && basename(runtimeDir) === 'dist';
 }
 
 function getPlatformPackageName(): string {
@@ -57,19 +61,37 @@ export function resolveSqliteVecLoadablePath(): string {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   const packageName = getPlatformPackageName();
   const filename = getLoadableFilename();
-
-  const candidates = [
-    ...(runtimeDir
-      ? [
-          resolve(runtimeDir, 'sqlite-vec', packageName, filename),
-          resolve(runtimeDir, '..', 'node_modules', packageName, filename),
-        ]
-      : []),
-    resolve(process.cwd(), 'dist', 'sqlite-vec', packageName, filename),
-    resolve(process.cwd(), 'node_modules', packageName, filename),
-    resolve(moduleDir, '..', '..', 'dist', 'sqlite-vec', packageName, filename),
-    resolve(moduleDir, '..', '..', 'node_modules', packageName, filename),
-  ];
+  let candidates: string[];
+  if (runtimeDir !== null && isDistRuntime(runtimeDir)) {
+    candidates = [resolve(runtimeDir, 'sqlite-vec', packageName, filename)];
+  } else {
+    candidates = [
+      ...(runtimeDir
+        ? [
+            resolve(
+              runtimeDir,
+              '..',
+              'dist',
+              'sqlite-vec',
+              packageName,
+              filename
+            ),
+          ]
+        : []),
+      resolve(
+        moduleDir,
+        '..',
+        '..',
+        'dist',
+        'sqlite-vec',
+        packageName,
+        filename
+      ),
+      resolve(moduleDir, '..', '..', 'node_modules', packageName, filename),
+      resolve(process.cwd(), 'dist', 'sqlite-vec', packageName, filename),
+      resolve(process.cwd(), 'node_modules', packageName, filename),
+    ];
+  }
 
   const matchedPath = candidates.find((candidate) => existsSync(candidate));
   if (!matchedPath) {

@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  cp,
+  mkdir,
+  readdir,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -90,6 +98,12 @@ async function createFixtureRepo(path: string): Promise<void> {
     await runCommand(['git', 'commit', '-m', 'init'], path),
     'git commit'
   );
+}
+
+async function copyBuiltDist(targetRoot: string): Promise<string> {
+  const copiedDistDir = join(targetRoot, 'dist');
+  await cp(join(repoRoot, 'dist'), copiedDistDir, { recursive: true });
+  return join(copiedDistDir, 'nya');
 }
 
 function createOfflineConfig(baseUrl: string): string {
@@ -221,12 +235,14 @@ describe('build artifact verification', () => {
     const builtArtifact = await stat(distPath);
     expect(builtArtifact.mode & 0o111).toBeGreaterThan(0);
 
-    const help = await runCommand([distPath, '--help'], tempRoot);
+    const copiedDistPath = await copyBuiltDist(join(tempRoot, 'copied-build'));
+
+    const help = await runCommand([copiedDistPath, '--help'], tempRoot);
     expectSuccess(help, 'dist/nya --help');
     expect(help.stdout).toContain('nya');
 
     const doctor = await runCommand(
-      [distPath, 'db', 'doctor', '--project', '--json', '--no-tui'],
+      [copiedDistPath, 'db', 'doctor', '--project', '--json', '--no-tui'],
       tempRoot
     );
     expectSuccess(doctor, 'dist/nya db doctor --project --json --no-tui');
@@ -238,12 +254,15 @@ describe('build artifact verification', () => {
     expect(doctorJson.dbExists).toBe(false);
     expect(doctorJson.needsRebuild).toBe(true);
 
-    const assets = await readdir(join(repoRoot, 'dist', 'tree-sitter'));
+    const assets = await readdir(
+      join(tempRoot, 'copied-build', 'dist', 'tree-sitter')
+    );
     expect(assets).toContain('web-tree-sitter.wasm');
     expect(assets).toContain('tree-sitter-typescript.wasm');
     const sqliteVecAsset = await stat(
       join(
-        repoRoot,
+        tempRoot,
+        'copied-build',
         'dist',
         'sqlite-vec',
         sqliteVecPackageName,
@@ -261,7 +280,7 @@ describe('build artifact verification', () => {
 import { chunkTextDocument } from ${JSON.stringify(chunkModuleUrl)};
 
 process.chdir(${JSON.stringify(isolatedCwd)});
-process.argv[1] = ${JSON.stringify(distPath)};
+process.argv[1] = ${JSON.stringify(copiedDistPath)};
 
 const chunks = await chunkTextDocument({
   filePath: 'fixture.ts',
@@ -300,6 +319,9 @@ console.log(JSON.stringify(chunks));
     const fixtureRepo = join(tempRoot, 'fixture-repo');
     const isolatedCwd = join(tempRoot, 'isolated-cwd');
     const configPath = join(tempRoot, 'offline-openai.toml');
+    const copiedDistPath = await copyBuiltDist(
+      join(tempRoot, 'runtime-package')
+    );
 
     await createFixtureRepo(fixtureRepo);
     await mkdir(isolatedCwd, { recursive: true });
@@ -348,7 +370,7 @@ console.log(JSON.stringify(chunks));
 
       const learn = await runCommand(
         [
-          distPath,
+          copiedDistPath,
           'learn',
           'git',
           fixtureRepo,
@@ -386,5 +408,55 @@ console.log(JSON.stringify(chunks));
     } finally {
       server.stop(true);
     }
+  });
+
+  test('dist learn-git verification fails when copied dist artifact is missing sqlite-vec assets', async () => {
+    await mkdir(tempRoot, { recursive: true });
+    await ensureBuild();
+
+    const fixtureRepo = join(tempRoot, 'fixture-repo');
+    const isolatedCwd = join(tempRoot, 'isolated-cwd');
+    const configPath = join(tempRoot, 'offline-openai.toml');
+    const copiedDistRoot = join(tempRoot, 'broken-runtime-package');
+    const copiedDistPath = await copyBuiltDist(copiedDistRoot);
+
+    await createFixtureRepo(fixtureRepo);
+    await mkdir(isolatedCwd, { recursive: true });
+    await writeFile(
+      configPath,
+      createOfflineConfig('http://127.0.0.1:65535/v1')
+    );
+    await unlink(
+      join(
+        copiedDistRoot,
+        'dist',
+        'sqlite-vec',
+        sqliteVecPackageName,
+        sqliteVecFilename
+      )
+    );
+
+    const learn = await runCommand(
+      [
+        copiedDistPath,
+        'learn',
+        'git',
+        fixtureRepo,
+        '--config',
+        configPath,
+        '--project',
+        '--json',
+        '--no-tui',
+      ],
+      isolatedCwd,
+      {
+        OPENAI_API_KEY: 'test-openai-key',
+      }
+    );
+
+    expect(learn.exitCode).not.toBe(0);
+    expect(learn.stderr).toContain(
+      'Loadble extension for sqlite-vec not found'
+    );
   });
 });
