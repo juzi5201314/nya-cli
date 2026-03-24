@@ -1,0 +1,15 @@
+{
+  "featureId": "fix-eval-perf-check-fixture-and-schema-drift-guards",
+  "reviewedAt": "2026-03-24T16:09:02.023342Z",
+  "commitId": "cbdcadf",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix addresses the prior blocking gap: `src/commands/eval-perf.ts` now schema-validates parsed baselines before comparison and exact-matches the required schema/fixture identity fields (`schemaVersion`, `fixture.name`, `fixture.searchQuery`, `fixture.aiSearchQuery`, and `fixture.sourceFiles`) in addition to the stable metrics set. `tests/eval-perf.test.ts` adds regression coverage for each required drift case plus malformed and shape-invalid baseline files, so the baseline gate now enforces the fixed-fixture/schema contract that the original review found missing.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": "/root/projects/nya2/.factory/validation/eval-perf/scrutiny/reviews/eval-perf-baseline.json",
+  "summary": "Reviewed the prior failed review, synthesis, both feature diffs (044fcfd and cbdcadf), the fix handoff, the fix transcript skeleton, mission/shared-state files, and the ops-worker skill. The fix adequately resolves the original blocking issue by validating baseline JSON through Zod and failing on schema/fixture identity drift, and I did not find any new blocking issues in scope."
+}
